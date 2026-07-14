@@ -61,6 +61,9 @@ export interface DashboardResponse {
   waitlistCount: number
   laneUtilizationPercent: number
   activeInstructorCount: number
+  activeMembershipCount: number
+  expiringMembershipCount: number
+  membershipOutstandingBalanceCents: number
   poolStatus?: { label: string; temperature?: number; ph?: number; lastCheckedAt?: string }
   sessions: Array<{
     id: string
@@ -72,6 +75,13 @@ export interface DashboardResponse {
     instructorName?: string
     expectedCount: number
     recordedCount: number
+  }>
+  expiringMemberships: Array<{
+    id: string
+    participantName: string
+    planName: string
+    endsOn: string
+    balanceCents: number
   }>
   recentEvents: Array<{ id: string; type: string; summary: string; occurredAt: string }>
 }

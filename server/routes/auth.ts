@@ -6,7 +6,7 @@ import { AppError } from '../../shared/errors.js'
 import { toPublicUser } from '../../shared/contracts.js'
 import { clearSessionCookie, createSessionToken, hashSessionToken, revokeSession, setSessionCookie } from '../auth/session.js'
 import { requireUser } from '../auth/authorize.js'
-import { verifyPassword } from '../auth/password.js'
+import { hashPassword, verifyPassword } from '../auth/password.js'
 import { config } from '../config.js'
 import { db } from '../db/client.js'
 import { auditEvents, authSessions, staffUsers } from '../db/schema.js'
@@ -16,6 +16,10 @@ const loginSchema = z.object({
   email: z.string().email().max(254),
   password: z.string().min(1).max(256),
   rememberMe: z.boolean().optional().default(false),
+}).strict()
+const passwordChangeSchema = z.object({
+  currentPassword: z.string().min(1).max(256),
+  newPassword: z.string().min(12).max(256),
 }).strict()
 
 export async function authRoutes(app: FastifyInstance) {
@@ -67,6 +71,31 @@ export async function authRoutes(app: FastifyInstance) {
   })
 
   app.get('/api/auth/me', async (request) => ({ user: toPublicUser(requireUser(request)) }))
+
+  app.post('/api/auth/password', async (request, reply) => {
+    const sessionUser = requireUser(request)
+    const body = parseWith(passwordChangeSchema, request.body)
+    const [account] = await db.select().from(staffUsers).where(eq(staffUsers.id, sessionUser.id)).limit(1)
+    const valid = account ? await verifyPassword(account.passwordHash, body.currentPassword).catch(() => false) : false
+    if (!account || !valid) throw new AppError(401, 'CURRENT_PASSWORD_INVALID', 'Mevcut sifre hatali.')
+
+    const passwordHash = await hashPassword(body.newPassword)
+    await db.transaction(async (tx) => {
+      await tx.update(staffUsers).set({ passwordHash, updatedAt: new Date() }).where(eq(staffUsers.id, sessionUser.id))
+      await tx.update(authSessions).set({ revokedAt: new Date() }).where(and(eq(authSessions.staffUserId, sessionUser.id), isNull(authSessions.revokedAt)))
+      await tx.insert(auditEvents).values({
+        organizationId: sessionUser.organizationId,
+        actorUserId: sessionUser.id,
+        action: 'auth.password_changed',
+        entityType: 'staff_user',
+        entityId: sessionUser.id,
+        summary: 'Personel sifresini degistirdi.',
+        metadata: { requestId: request.id },
+      })
+    })
+    clearSessionCookie(reply)
+    return reply.code(204).send()
+  })
 
   app.post('/api/auth/logout', async (request, reply) => {
     const token = request.cookies[config.SESSION_COOKIE_NAME]

@@ -27,6 +27,8 @@ const showForm = ref(false)
 const createNewParticipant = ref(true)
 const query = ref(typeof route.query.query === 'string' ? route.query.query : '')
 const status = ref('')
+const ending = ref(typeof route.query.ending === 'string' ? route.query.ending : '')
+const sort = ref(typeof route.query.sort === 'string' ? route.query.sort : 'expires_asc')
 const form = reactive({ participantId: '', firstName: '', lastName: '', phone: '', email: '', birthDate: '', emergencyContactName: '', emergencyContactPhone: '', safetyNotes: '', planId: '', startsOn: new Date().toISOString().slice(0, 10), initialPaymentCents: 0, paymentMethod: 'cash', note: '' })
 let debounce: ReturnType<typeof globalThis.setTimeout>
 
@@ -47,6 +49,9 @@ async function load() {
   const params = new globalThis.URLSearchParams()
   if (query.value) params.set('query', query.value)
   if (status.value) params.set('status', status.value)
+  if (ending.value) params.set('ending', ending.value)
+  if (sort.value) params.set('sort', sort.value)
+  params.set('pageSize', '100')
   try {
     const [list, optionData] = await Promise.all([
       apiFetch<MembershipsResponse>(`/memberships?${params}`),
@@ -113,10 +118,10 @@ async function createMembership() {
   }
 }
 
-watch([query, status], () => {
+watch([query, status, ending, sort], () => {
   globalThis.clearTimeout(debounce)
   debounce = globalThis.setTimeout(() => {
-    router.replace({ query: { ...(query.value ? { query: query.value } : {}), ...(status.value ? { status: status.value } : {}) } })
+    router.replace({ query: { ...(query.value ? { query: query.value } : {}), ...(status.value ? { status: status.value } : {}), ...(ending.value ? { ending: ending.value } : {}), ...(sort.value !== 'expires_asc' ? { sort: sort.value } : {}) } })
     load()
   }, 300)
 })
@@ -173,6 +178,8 @@ onMounted(load)
   <section class="participant-tools">
     <label class="participant-search"><Search :size="18" /><span class="sr-only">Üye ara</span><input v-model="query" type="search" placeholder="Üye, telefon, e-posta veya paket ara" /></label>
     <label class="field type-filter"><span>Durum</span><select v-model="status"><option value="">Tümü</option><option value="active">Aktif</option><option value="frozen">Dondurulmuş</option><option value="expired">Süresi Doldu</option><option value="cancelled">İptal</option></select></label>
+    <label class="field type-filter"><span>Bitiş Takibi</span><select v-model="ending"><option value="">Tüm tarihler</option><option value="7d">7 gün içinde</option><option value="30d">30 gün içinde</option></select></label>
+    <label class="field type-filter"><span>Sırala</span><select v-model="sort"><option value="expires_asc">Bitişi yakın</option><option value="expires_desc">Bitişi uzak</option><option value="balance_desc">Açık bakiye yüksek</option><option value="newest">En yeni üyelik</option></select></label>
   </section>
 
   <StatePanel v-if="loading" state="loading" />
@@ -197,5 +204,5 @@ onMounted(load)
 </template>
 
 <style scoped>
-.membership-form{margin-bottom:18px}.membership-mode{display:flex;flex-wrap:wrap;gap:8px}.membership-access{display:flex;flex-wrap:wrap;gap:10px;padding:12px;background:#edf4ff;border:1px solid #d8e2ee}.membership-access span{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:800;color:#123a5b}.form-actions{display:flex;justify-content:flex-end;gap:10px}.participant-tools{display:flex;align-items:end;gap:12px;margin-bottom:18px;padding:14px;background:#edf4ff;border:1px solid #d8e2ee}.participant-search{flex:1;min-height:42px;display:flex;align-items:center;gap:8px;padding:0 11px;background:white;border:1px solid #8fa3b7}.participant-search input{width:100%;border:0;outline:0}.type-filter{width:220px;grid-column:auto}.table-sub{display:block;margin-top:3px;font-size:11px}.access-chips{display:flex;flex-wrap:wrap;gap:6px}.access-chips span{display:inline-flex;align-items:center;gap:5px;padding:4px 7px;background:#eaf4ff;border:1px solid #b0c9e8;color:#00497c;font-size:11px;font-weight:800}.membership-table{min-width:980px}@media(max-width:600px){.participant-tools{align-items:stretch;flex-direction:column}.type-filter{width:100%}.form-actions,.membership-mode{flex-direction:column}.form-actions .button,.membership-mode .button{width:100%}}
+.membership-form{margin-bottom:18px}.membership-mode{display:flex;flex-wrap:wrap;gap:8px}.membership-access{display:flex;flex-wrap:wrap;gap:10px;padding:12px;background:#edf4ff;border:1px solid #d8e2ee}.membership-access span{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:800;color:#123a5b}.form-actions{display:flex;justify-content:flex-end;gap:10px}.participant-tools{display:grid;grid-template-columns:minmax(260px,1fr) repeat(3,minmax(150px,220px));align-items:end;gap:12px;margin-bottom:18px;padding:14px;background:#edf4ff;border:1px solid #d8e2ee}.participant-search{min-height:42px;display:flex;align-items:center;gap:8px;padding:0 11px;background:white;border:1px solid #8fa3b7}.participant-search input{width:100%;border:0;outline:0}.type-filter{width:auto;grid-column:auto}.table-sub{display:block;margin-top:3px;font-size:11px}.access-chips{display:flex;flex-wrap:wrap;gap:6px}.access-chips span{display:inline-flex;align-items:center;gap:5px;padding:4px 7px;background:#eaf4ff;border:1px solid #b0c9e8;color:#00497c;font-size:11px;font-weight:800}.membership-table{min-width:980px}@media(max-width:900px){.participant-tools{grid-template-columns:1fr 1fr}.participant-search{grid-column:1/-1}}@media(max-width:600px){.participant-tools{display:flex;align-items:stretch;flex-direction:column}.type-filter{width:100%}.form-actions,.membership-mode{flex-direction:column}.form-actions .button,.membership-mode .button{width:100%}}
 </style>

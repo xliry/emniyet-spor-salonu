@@ -4,7 +4,7 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   CalendarDays, ChevronLeft, ClipboardCheck, CreditCard, Dumbbell, LayoutDashboard,
-  LogOut, Menu, Search, Settings, Users, Waves, X,
+  LogOut, Menu, Search, Settings, Waves, X,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import InitialsAvatar from './InitialsAvatar.vue'
@@ -17,12 +17,12 @@ const query = ref('')
 
 const navItems = computed(() => [
   { to: '/dashboard', label: 'Genel Bakış', icon: LayoutDashboard },
-  { to: '/courses', label: 'Kurslar ve Havuz', icon: Waves },
-  { to: '/lane-plan', label: 'Takvim', icon: CalendarDays },
   ...(auth.user?.role === 'trainer' ? [] : [
-    { to: '/memberships', label: 'Üyeler', icon: Users },
+    { to: '/memberships', label: 'Salon Üyelikleri', icon: Dumbbell },
     { to: '/payments', label: 'Tahsilatlar', icon: CreditCard },
   ]),
+  { to: '/courses', label: 'Kurslar ve Havuz', icon: Waves },
+  { to: '/lane-plan', label: 'Takvim', icon: CalendarDays },
   ...(auth.user?.role === 'trainer' ? [] : [{ to: '/pool-checks', label: 'Havuz Kontrolleri', icon: ClipboardCheck }]),
   ...(auth.user?.role === 'trainer' ? [] : [{ to: '/participants', label: 'Kursiyerler', icon: Dumbbell }]),
   { to: '/settings', label: 'Ayarlar', icon: Settings },
@@ -73,8 +73,8 @@ async function logout() {
       <header class="topbar">
         <button class="icon-button topbar__menu" type="button" aria-label="Menüyü aç" @click="mobileOpen = true"><Menu :size="22" /></button>
         <form class="topbar__search" role="search" @submit.prevent="submitSearch">
-          <Search :size="18" /><label class="sr-only" for="global-search">Kursiyer ara</label>
-          <input id="global-search" v-model="query" type="search" placeholder="Kursiyer ara…" />
+          <Search :size="18" /><label class="sr-only" for="global-search">Üye ara</label>
+          <input id="global-search" v-model="query" type="search" placeholder="Üye veya kursiyer ara…" />
         </form>
         <div class="topbar__context"><span class="status-dot" />Tesis aktif</div>
       </header>

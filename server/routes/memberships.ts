@@ -36,11 +36,21 @@ export async function membershipRoutes(app: FastifyInstance) {
     const query = parseWith(z.object({
       query: z.string().max(120).optional(),
       status: z.enum(MEMBERSHIP_STATUSES).optional(),
+      ending: z.enum(['7d', '30d']).optional(),
+      sort: z.enum(['expires_asc', 'expires_desc', 'balance_desc', 'newest']).default('expires_asc'),
       page: z.coerce.number().int().min(1).default(1),
       pageSize: z.coerce.number().int().min(1).max(100).default(30),
     }), request.query)
     const search = query.query?.trim()
+    const endingDays = query.ending === '7d' ? 7 : query.ending === '30d' ? 30 : null
     const offset = (query.page - 1) * query.pageSize
+    const orderBy = query.sort === 'expires_desc'
+      ? sql`case when m.status='active' then 0 when m.status='frozen' then 1 else 2 end,m.ends_on desc`
+      : query.sort === 'balance_desc'
+        ? sql`coalesce(m.sale_amount_cents-payments.paid_total,m.sale_amount_cents) desc,m.ends_on asc`
+        : query.sort === 'newest'
+          ? sql`m.created_at desc`
+          : sql`case when m.status='active' then 0 when m.status='frozen' then 1 else 2 end,m.ends_on asc`
     const rows = await db.execute(sql`
       select m.id,m.status,m.starts_on,m.ends_on,m.sale_amount_cents,m.notes,
         p.id participant_id,concat(p.first_name,' ',p.last_name) participant_name,p.phone,p.email,
@@ -56,8 +66,9 @@ export async function membershipRoutes(app: FastifyInstance) {
       ) payments on payments.membership_id=m.id
       where m.organization_id=${user.organizationId}
       ${query.status ? sql`and m.status=${query.status}` : sql``}
+      ${endingDays ? sql`and m.status='active' and m.ends_on >= current_date and m.ends_on <= current_date + ${endingDays}` : sql``}
       ${search ? sql`and (concat(p.first_name,' ',p.last_name) ilike ${`%${search}%`} or p.phone ilike ${`%${search}%`} or p.email ilike ${`%${search}%`} or mp.name ilike ${`%${search}%`})` : sql``}
-      order by case when m.status='active' then 0 when m.status='frozen' then 1 else 2 end,m.ends_on asc
+      order by ${orderBy}
       limit ${query.pageSize} offset ${offset}
     `)
     const count = await db.execute(sql`
@@ -65,6 +76,7 @@ export async function membershipRoutes(app: FastifyInstance) {
       from gym_memberships m join participants p on p.id=m.participant_id join membership_plans mp on mp.id=m.plan_id
       where m.organization_id=${user.organizationId}
       ${query.status ? sql`and m.status=${query.status}` : sql``}
+      ${endingDays ? sql`and m.status='active' and m.ends_on >= current_date and m.ends_on <= current_date + ${endingDays}` : sql``}
       ${search ? sql`and (concat(p.first_name,' ',p.last_name) ilike ${`%${search}%`} or p.phone ilike ${`%${search}%`} or p.email ilike ${`%${search}%`} or mp.name ilike ${`%${search}%`})` : sql``}
     `)
     const summary = await db.execute(sql`

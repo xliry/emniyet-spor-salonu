@@ -6,7 +6,8 @@ This repository is the Emniyet Spor Salonu pool and course operations pilot.
 
 - Vue 3/Vite client, Fastify API, PostgreSQL/Drizzle, single Docker image.
 - Light mode only. Customer branding is primary; Zenit is a subtle provider label.
-- QR, Supabase, online payment, public/member PWA, messaging delivery, AI, official police marks, and real personal data are forbidden.
+- QR, Supabase, online payment, public/member PWA, messaging delivery, AI, and official police marks are forbidden.
+- Real personal data may be imported only from user-provided operational files into this authenticated deployment. Never commit source workbooks, exports, database dumps, credentials, or personal data to Git; do not print personal data in logs or chat.
 - Keep `run.log` append-only.
 - Never commit `.env`, secrets, generated runtime logs, or database files.
 
