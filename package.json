@@ -27,7 +27,8 @@
     "smoke:operations": "tsx scripts/smoke-api.ts operations",
     "smoke:payments": "tsx scripts/smoke-api.ts payments",
     "build:server": "tsc -p tsconfig.server.json",
-    "verify": "npm run lint && npm run typecheck && npm run build"
+    "verify": "npm run lint && npm run typecheck && npm run build",
+    "test": "npm run lint && npm run typecheck"
   },
   "dependencies": {
     "@fastify/cookie": "11.0.2",

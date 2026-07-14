@@ -13,4 +13,8 @@ This repository is the Emniyet Spor Salonu pool and course operations pilot.
 
 ## Verification
 
+## Setup
+
+Run `npm ci`, copy `.env.example` to `.env`, and provide a local PostgreSQL connection before running database commands. Never use a production database URL in `.env`. Run `npm test` before handoff.
+
 Run `npm run lint`, `npm run typecheck`, `npm run build`, database migration/seed checks, `npm run smoke:api`, and `docker build -t emniyet-spor-salonu:local .` before handoff when the local dependencies are available.

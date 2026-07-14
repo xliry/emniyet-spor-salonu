@@ -15,7 +15,7 @@ Zenit GymOps altyapısı tarafından desteklenir; müşteri markası arayüzde b
 
 ## Kapsam sınırı
 
-Bu pilot yalnız personel tarafından kullanılan kurs/havuz operasyonlarını kapsar. QR, turnike, Supabase, online ödeme, üye mobil uygulaması, gerçek mesaj gönderimi, yapay zekâ, genel spor salonu üyelik yönetimi ve resmi kurum amblem/işaretleri yoktur.
+Bu pilot yalnız personel tarafından kullanılan salon üyeliği, kurs ve havuz operasyonlarını kapsar. QR, turnike, Supabase, online ödeme, üye mobil uygulaması, gerçek mesaj gönderimi, yapay zekâ ve resmi kurum amblem/işaretleri yoktur.
 
 ## Yerel kurulum
 
@@ -24,7 +24,7 @@ Gereksinimler: Node.js 22+, npm 10+, Docker Desktop.
 ```powershell
 Copy-Item .env.example .env
 docker compose -f docker-compose.dev.yml up -d postgres
-npm install
+npm ci
 npm run db:migrate
 npm run db:seed
 npm run dev
@@ -65,6 +65,7 @@ Bu değişkenleri ilk girişten sonra kaldırın/döndürün. Komut parola veya 
 | `npm run db:check` | DB bağlantısı ve beklenen tabloları kontrol eder |
 | `npm run smoke:api` | Oturum, RBAC ve kritik operasyon smoke akışını çalıştırır |
 | `npm run verify` | Lint + typecheck + production build |
+| `npm test` | Lint + typecheck yerel kontrolü |
 | `npm start` | Derlenmiş tek HTTP sunucusunu başlatır |
 
 ## Mimari
