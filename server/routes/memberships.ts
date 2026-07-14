@@ -22,6 +22,7 @@ const createMembershipSchema = z.object({
   }).strict().optional(),
   planId: uuidSchema,
   startsOn: z.string().date().optional(),
+  status: z.enum(MEMBERSHIP_STATUSES).default('active'),
   saleAmountCents: z.number().int().nonnegative().optional(),
   initialPaymentCents: z.number().int().nonnegative().default(0),
   paymentMethod: z.enum(PAYMENT_METHODS).default('cash'),
@@ -167,7 +168,7 @@ export async function membershipRoutes(app: FastifyInstance) {
       const [plan] = await tx.select().from(membershipPlans).where(and(eq(membershipPlans.id, body.planId), eq(membershipPlans.organizationId, user.organizationId), eq(membershipPlans.isActive, true))).limit(1)
       if (!plan) throw notFound('Uyelik paketi bulunamadi.')
       const [existing] = await tx.select({ id: gymMemberships.id }).from(gymMemberships).where(and(eq(gymMemberships.participantId, participant.id), eq(gymMemberships.organizationId, user.organizationId), eq(gymMemberships.status, 'active'))).limit(1)
-      if (existing) throw conflict('ACTIVE_MEMBERSHIP_EXISTS', 'Bu kisi icin aktif salon uyeligi zaten var.')
+      if (existing && body.status === 'active') throw conflict('ACTIVE_MEMBERSHIP_EXISTS', 'Bu kisi icin aktif salon uyeligi zaten var.')
       const startsOn = body.startsOn ?? localDateInIstanbul()
       const endDate = new Date(`${startsOn}T00:00:00Z`)
       endDate.setUTCDate(endDate.getUTCDate() + plan.durationDays - 1)
@@ -178,7 +179,7 @@ export async function membershipRoutes(app: FastifyInstance) {
         organizationId: user.organizationId,
         participantId: participant.id,
         planId: body.planId,
-        status: 'active',
+        status: body.status,
         startsOn,
         endsOn,
         saleAmountCents,
@@ -198,7 +199,7 @@ export async function membershipRoutes(app: FastifyInstance) {
         }).returning()
       }
       await tx.update(participants).set({ participantType: 'member', updatedAt: new Date() }).where(eq(participants.id, participant.id))
-      await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'membership.create', entityType: 'gym_membership', entityId: membership.id, summary: 'Salon uyeligi olusturuldu.', metadata: { participantId: participant.id, planId: body.planId, saleAmountCents, initialPaymentCents: body.initialPaymentCents } })
+      await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'membership.create', entityType: 'gym_membership', entityId: membership.id, summary: 'Salon uyeligi olusturuldu.', metadata: { participantId: participant.id, planId: body.planId, status: body.status, saleAmountCents, initialPaymentCents: body.initialPaymentCents } })
       return { membership, payment }
     })
     return reply.code(201).send(result)
