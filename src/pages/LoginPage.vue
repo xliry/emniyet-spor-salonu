@@ -11,12 +11,13 @@ const route = useRoute()
 const router = useRouter()
 const email = ref('')
 const password = ref('')
+const rememberMe = ref(false)
 const error = ref('')
 
 async function submit() {
   error.value = ''
   try {
-    await auth.login(email.value, password.value)
+    await auth.login(email.value, password.value, rememberMe.value)
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
     await router.replace(redirect)
   } catch (cause) {
@@ -41,6 +42,7 @@ async function submit() {
       <form class="login-form" @submit.prevent="submit">
         <label class="field field--full"><span>E-posta</span><div class="icon-input"><Mail :size="18" /><input v-model.trim="email" autocomplete="username" inputmode="email" required type="email" placeholder="ad.soyad@kurum.local" /></div></label>
         <label class="field field--full"><span>Şifre</span><div class="icon-input"><LockKeyhole :size="18" /><input v-model="password" autocomplete="current-password" required type="password" placeholder="Şifreniz" /></div></label>
+        <label class="remember-me"><input v-model="rememberMe" type="checkbox" /><span>Beni hatırla</span><small>Bu cihazda 30 gün açık kalır.</small></label>
         <button class="button button--primary button--block" type="submit" :disabled="auth.loading"><span>{{ auth.loading ? 'Giriş yapılıyor…' : 'Giriş yap' }}</span><ArrowRight :size="18" /></button>
       </form>
     </section>
@@ -48,5 +50,5 @@ async function submit() {
 </template>
 
 <style scoped>
-.login-page{min-height:100vh;display:grid;grid-template-columns:minmax(340px,1fr) minmax(420px,620px);background:#f7f9ff}.login-brand{display:flex;flex-direction:column;justify-content:center;padding:clamp(40px,8vw,112px);background:#102a43;color:#e8f2ff}.login-brand__mark{width:62px;height:62px;display:grid;place-items:center;margin-bottom:34px;background:#1769aa;border-radius:6px}.login-brand .eyebrow{color:#9dcaff}.login-brand h1{max-width:560px;margin:0;font-size:clamp(38px,5vw,60px);line-height:1.05;letter-spacing:-.03em}.login-brand>p:not(.eyebrow){max-width:570px;margin:22px 0;color:#c6d8e6;font-size:17px;line-height:1.7}.login-brand__assurance{display:flex;align-items:center;gap:9px;margin-top:30px;font-weight:700}.login-brand small{margin-top:64px;color:#9fb2c2;letter-spacing:.08em;text-transform:uppercase}.login-card{align-self:center;margin:40px clamp(24px,7vw,88px);display:grid;gap:26px;padding:32px;background:#fff;border:1px solid #d8e2ee;border-top:4px solid #1769aa;border-radius:6px}.login-card h2{margin:0;font-size:26px}.login-card p{margin:7px 0 0}.login-form{display:grid;gap:17px}.icon-input{display:flex;align-items:center;gap:9px;min-height:46px;padding:0 12px;border:1px solid #8fa3b7;border-radius:4px;color:#49607c}.icon-input:focus-within{border-color:#1769aa;box-shadow:0 0 0 2px #d1e4ff}.icon-input input{width:100%;border:0;outline:0;background:transparent}.login-form .button{min-height:48px;margin-top:5px}@media(max-width:800px){.login-page{grid-template-columns:1fr}.login-brand{padding:36px 24px}.login-brand h1{font-size:36px}.login-brand>p:not(.eyebrow){font-size:15px}.login-brand small{margin-top:28px}.login-card{margin:24px 14px;padding:24px 20px}}
+.login-page{min-height:100vh;display:grid;grid-template-columns:minmax(340px,1fr) minmax(420px,620px);background:#f7f9ff}.login-brand{display:flex;flex-direction:column;justify-content:center;padding:clamp(40px,8vw,112px);background:#102a43;color:#e8f2ff}.login-brand__mark{width:62px;height:62px;display:grid;place-items:center;margin-bottom:34px;background:#1769aa;border-radius:6px}.login-brand .eyebrow{color:#9dcaff}.login-brand h1{max-width:560px;margin:0;font-size:clamp(38px,5vw,60px);line-height:1.05;letter-spacing:-.03em}.login-brand>p:not(.eyebrow){max-width:570px;margin:22px 0;color:#c6d8e6;font-size:17px;line-height:1.7}.login-brand__assurance{display:flex;align-items:center;gap:9px;margin-top:30px;font-weight:700}.login-brand small{margin-top:64px;color:#9fb2c2;letter-spacing:.08em;text-transform:uppercase}.login-card{align-self:center;margin:40px clamp(24px,7vw,88px);display:grid;gap:26px;padding:32px;background:#fff;border:1px solid #d8e2ee;border-top:4px solid #1769aa;border-radius:6px}.login-card h2{margin:0;font-size:26px}.login-card p{margin:7px 0 0}.login-form{display:grid;gap:17px}.icon-input{display:flex;align-items:center;gap:9px;min-height:46px;padding:0 12px;border:1px solid #8fa3b7;border-radius:4px;color:#49607c}.icon-input:focus-within{border-color:#1769aa;box-shadow:0 0 0 2px #d1e4ff}.icon-input input{width:100%;border:0;outline:0;background:transparent}.remember-me{display:flex;align-items:center;gap:8px;color:#243b53;cursor:pointer;font-size:14px;font-weight:700}.remember-me input{width:16px;height:16px;accent-color:#1769aa}.remember-me small{margin-left:auto;color:#697b8f;font-size:12px;font-weight:500;text-transform:none;letter-spacing:0}.login-form .button{min-height:48px;margin-top:5px}@media(max-width:800px){.login-page{grid-template-columns:1fr}.login-brand{padding:36px 24px}.login-brand h1{font-size:36px}.login-brand>p:not(.eyebrow){font-size:15px}.login-brand small{margin-top:28px}.login-card{margin:24px 14px;padding:24px 20px}.remember-me{flex-wrap:wrap}.remember-me small{width:100%;margin-left:24px}}
 </style>

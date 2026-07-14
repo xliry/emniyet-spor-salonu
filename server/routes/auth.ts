@@ -12,7 +12,11 @@ import { db } from '../db/client.js'
 import { auditEvents, authSessions, staffUsers } from '../db/schema.js'
 import { parseWith } from '../utils.js'
 
-const loginSchema = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(256) }).strict()
+const loginSchema = z.object({
+  email: z.string().email().max(254),
+  password: z.string().min(1).max(256),
+  rememberMe: z.boolean().optional().default(false),
+}).strict()
 
 export async function authRoutes(app: FastifyInstance) {
   app.post('/api/auth/login', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request, reply) => {
@@ -36,7 +40,8 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     const token = createSessionToken()
-    const expiresAt = new Date(Date.now() + config.SESSION_TTL_HOURS * 3_600_000)
+    const sessionTtlHours = body.rememberMe ? config.REMEMBER_ME_TTL_DAYS * 24 : config.SESSION_TTL_HOURS
+    const expiresAt = new Date(Date.now() + sessionTtlHours * 3_600_000)
     await db.transaction(async (tx) => {
       await tx.delete(authSessions).where(and(lt(authSessions.expiresAt, new Date()), isNull(authSessions.revokedAt)))
       await tx.insert(authSessions).values({
@@ -54,7 +59,7 @@ export async function authRoutes(app: FastifyInstance) {
         entityType: 'staff_user',
         entityId: user.id,
         summary: 'Personel oturum acti.',
-        metadata: { requestId: request.id },
+          metadata: { requestId: request.id, rememberMe: body.rememberMe },
       })
     })
     setSessionCookie(reply, token, expiresAt)

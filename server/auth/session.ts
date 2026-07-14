@@ -66,13 +66,14 @@ export async function revokeSession(token?: string) {
 }
 
 export function setSessionCookie(reply: FastifyReply, token: string, expiresAt: Date) {
+  const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1_000))
   reply.setCookie(config.SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     secure: config.isProduction,
     sameSite: 'lax',
     path: '/',
     expires: expiresAt,
-    maxAge: config.SESSION_TTL_HOURS * 60 * 60,
+    maxAge,
   })
 }
 

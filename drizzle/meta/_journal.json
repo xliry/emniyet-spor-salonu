@@ -22,6 +22,13 @@
       "when": 1784031272543,
       "tag": "0002_seed_demo_operations",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784090000000,
+      "tag": "0003_seed_anonymized_excel_demo",
+      "breakpoints": true
     }
   ]
 }

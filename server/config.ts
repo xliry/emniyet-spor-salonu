@@ -9,6 +9,7 @@ const schema = z.object({
   TRUST_PROXY: z.enum(['true', 'false']).default('false'),
   SESSION_COOKIE_NAME: z.string().min(1).default('emniyet_session'),
   SESSION_TTL_HOURS: z.coerce.number().int().positive().max(168).default(12),
+  REMEMBER_ME_TTL_DAYS: z.coerce.number().int().positive().max(90).default(30),
   LOG_LEVEL: z.string().default('info'),
 })
 

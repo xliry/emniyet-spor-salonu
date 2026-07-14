@@ -23,11 +23,11 @@ export const useAuthStore = defineStore('auth', () => {
     return user.value
   }
 
-  async function login(email: string, password: string) {
+  async function login(email: string, password: string, rememberMe = false) {
     loading.value = true
     try {
       const response = await apiFetch<{ user: User }>('/auth/login', {
-        method: 'POST', body: JSON.stringify({ email, password }),
+        method: 'POST', body: JSON.stringify({ email, password, rememberMe }),
       })
       user.value = response.user
       checked.value = true
@@ -44,4 +44,3 @@ export const useAuthStore = defineStore('auth', () => {
 
   return { user, checked, loading, isManager, restore, login, logout }
 })
-
