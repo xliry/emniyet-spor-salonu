@@ -19,7 +19,7 @@ const loginSchema = z.object({
 }).strict()
 const passwordChangeSchema = z.object({
   currentPassword: z.string().min(1).max(256),
-  newPassword: z.string().min(12).max(256),
+  newPassword: z.string().min(11).max(256),
 }).strict()
 
 export async function authRoutes(app: FastifyInstance) {
