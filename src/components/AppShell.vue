@@ -3,7 +3,7 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  CalendarDays, ChevronLeft, ClipboardCheck, CreditCard, LayoutDashboard,
+  CalendarDays, ChevronLeft, ClipboardCheck, CreditCard, Dumbbell, LayoutDashboard,
   LogOut, Menu, Search, Settings, Users, Waves, X,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
@@ -20,10 +20,11 @@ const navItems = computed(() => [
   { to: '/courses', label: 'Kurslar ve Havuz', icon: Waves },
   { to: '/lane-plan', label: 'Takvim', icon: CalendarDays },
   ...(auth.user?.role === 'trainer' ? [] : [
-    { to: '/participants', label: 'Kursiyerler', icon: Users },
+    { to: '/memberships', label: 'Üyeler', icon: Users },
     { to: '/payments', label: 'Tahsilatlar', icon: CreditCard },
   ]),
   ...(auth.user?.role === 'trainer' ? [] : [{ to: '/pool-checks', label: 'Havuz Kontrolleri', icon: ClipboardCheck }]),
+  ...(auth.user?.role === 'trainer' ? [] : [{ to: '/participants', label: 'Kursiyerler', icon: Dumbbell }]),
   { to: '/settings', label: 'Ayarlar', icon: Settings },
 ])
 
@@ -33,7 +34,7 @@ const isActive = (path: string) => path === '/courses'
 
 function submitSearch() {
   if (!query.value.trim()) return
-  router.push({ path: '/participants', query: { query: query.value.trim() } })
+  router.push({ path: '/memberships', query: { query: query.value.trim() } })
   query.value = ''
 }
 

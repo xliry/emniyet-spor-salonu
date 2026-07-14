@@ -3,7 +3,7 @@ import { hashPassword } from '../server/auth/password.js'
 import { db, pool } from '../server/db/client.js'
 import {
   attendanceRecords, auditEvents, branches, courseScheduleRules, courseSessions, courseTerms, courses, enrollments,
-  guardians, instructors, organizationSettings, organizations, participantGuardians, participants, paymentRecords,
+  guardians, gymMemberships, instructors, membershipPayments, membershipPlans, organizationSettings, organizations, participantGuardians, participants, paymentRecords,
   poolCheckDefinitions, poolCheckRuns, poolCheckValues, poolLanes, pools, staffUsers,
 } from '../server/db/schema.js'
 
@@ -20,6 +20,8 @@ const sessionIds = Array.from({ length: 6 }, (_, index) => `10000000-0000-4000-8
 const participantIds = Array.from({ length: 8 }, (_, index) => `10000000-0000-4000-8000-00000000080${index + 1}`)
 const enrollmentIds = Array.from({ length: 8 }, (_, index) => `10000000-0000-4000-8000-00000000090${index + 1}`)
 const laneIds = Array.from({ length: 8 }, (_, index) => `10000000-0000-4000-8000-00000000031${index + 1}`)
+const membershipPlanIds = Array.from({ length: 3 }, (_, index) => `10000000-0000-4000-8000-00000000160${index + 1}`)
+const membershipIds = Array.from({ length: 4 }, (_, index) => `10000000-0000-4000-8000-00000000170${index + 1}`)
 
 function dayString(date: Date) { return date.toISOString().slice(0, 10) }
 function weekMonday() {
@@ -111,6 +113,43 @@ async function seed() {
     await tx.insert(guardians).values({ id: guardianId, organizationId: ids.organization, fullName: 'Kurgu Veli Koral', relationship: 'Veli', phone: '+90 555 030 0001', email: 'veli@fictional.invalid' }).onConflictDoUpdate({ target: guardians.id, set: { fullName: 'Kurgu Veli Koral', phone: '+90 555 030 0001', updatedAt: new Date() } })
     await tx.insert(participantGuardians).values({ participantId: participantIds[2], guardianId, isPrimaryContact: true }).onConflictDoUpdate({ target: [participantGuardians.participantId, participantGuardians.guardianId], set: { isPrimaryContact: true } })
 
+    const membershipPlanRows = [
+      { id: membershipPlanIds[0], name: 'Aylik Salon + Havuz', durationDays: 30, priceCents: 180000, visitLimit: null, poolAccess: true, gymAccess: true },
+      { id: membershipPlanIds[1], name: 'Uc Aylik Salon', durationDays: 90, priceCents: 420000, visitLimit: null, poolAccess: false, gymAccess: true },
+      { id: membershipPlanIds[2], name: 'Aile Havuz Erisimi', durationDays: 30, priceCents: 250000, visitLimit: 12, poolAccess: true, gymAccess: false },
+    ]
+    for (const plan of membershipPlanRows) {
+      await tx.insert(membershipPlans).values({ ...plan, organizationId: ids.organization }).onConflictDoUpdate({ target: membershipPlans.id, set: { name: plan.name, durationDays: plan.durationDays, priceCents: plan.priceCents, visitLimit: plan.visitLimit, poolAccess: plan.poolAccess, gymAccess: plan.gymAccess, isActive: true, updatedAt: new Date() } })
+    }
+    const membershipRows = [
+      { id: membershipIds[0], participantIndex: 1, planIndex: 0, status: 'active' as const, startsOffset: -8, paidCents: 180000 },
+      { id: membershipIds[1], participantIndex: 4, planIndex: 1, status: 'active' as const, startsOffset: -70, paidCents: 300000 },
+      { id: membershipIds[2], participantIndex: 7, planIndex: 0, status: 'frozen' as const, startsOffset: -18, paidCents: 90000 },
+      { id: membershipIds[3], participantIndex: 0, planIndex: 2, status: 'active' as const, startsOffset: -25, paidCents: 250000 },
+    ]
+    for (let index = 0; index < membershipRows.length; index += 1) {
+      const row = membershipRows[index]
+      const plan = membershipPlanRows[row.planIndex]
+      const starts = new Date(monday); starts.setUTCDate(starts.getUTCDate() + row.startsOffset)
+      const ends = new Date(starts); ends.setUTCDate(ends.getUTCDate() + plan.durationDays - 1)
+      await tx.insert(gymMemberships).values({
+        id: row.id,
+        organizationId: ids.organization,
+        participantId: participantIds[row.participantIndex],
+        planId: plan.id,
+        status: row.status,
+        startsOn: dayString(starts),
+        endsOn: dayString(ends),
+        saleAmountCents: plan.priceCents,
+        notes: 'Kurgu pilot salon uyeligi.',
+        createdBy: ids.desk,
+      }).onConflictDoUpdate({ target: gymMemberships.id, set: { participantId: participantIds[row.participantIndex], planId: plan.id, status: row.status, startsOn: dayString(starts), endsOn: dayString(ends), saleAmountCents: plan.priceCents, updatedAt: new Date() } })
+      if (row.paidCents > 0) {
+        await tx.insert(membershipPayments).values({ id: `10000000-0000-4000-8000-00000000180${index + 1}`, organizationId: ids.organization, membershipId: row.id, amountCents: row.paidCents, method: index % 2 ? 'cash' : 'card_terminal', paidAt: new Date(), recordedBy: ids.desk, reference: `PILOT-UYELIK-${index + 1}` })
+          .onConflictDoUpdate({ target: membershipPayments.id, set: { amountCents: row.paidCents, status: 'recorded', voidedAt: null, voidedBy: null, voidReason: null, updatedAt: new Date() } })
+      }
+    }
+
     const enrollmentRows = [
       [0, 0, 'active', null], [1, 1, 'active', null], [1, 2, 'waitlisted', 1], [2, 3, 'active', null],
       [3, 4, 'active', null], [4, 5, 'active', null], [5, 6, 'active', null], [0, 7, 'active', null],
@@ -146,4 +185,3 @@ async function seed() {
 }
 
 try { await seed() } finally { await pool.end() }
-

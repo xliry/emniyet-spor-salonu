@@ -9,6 +9,6 @@ export const ATTENDANCE_STATUSES = ['present', 'absent', 'late', 'excused', 'mak
 export const PAYMENT_METHODS = ['cash', 'card_terminal', 'bank_transfer', 'other'] as const
 export const PAYMENT_STATUSES = ['recorded', 'voided'] as const
 export const PARTICIPANT_TYPES = ['member', 'external'] as const
+export const MEMBERSHIP_STATUSES = ['active', 'frozen', 'expired', 'cancelled'] as const
 export const CHECK_VALUE_TYPES = ['number', 'boolean', 'text'] as const
 export const FACILITY_STATUSES = ['ok', 'attention', 'not_checked'] as const
-

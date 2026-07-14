@@ -33,6 +33,7 @@ export const paymentMethodEnum = pgEnum('payment_method', ['cash', 'card_termina
 export const paymentStatusEnum = pgEnum('payment_status', ['recorded', 'voided'])
 export const checkValueTypeEnum = pgEnum('check_value_type', ['number', 'boolean', 'text'])
 export const facilityStatusEnum = pgEnum('facility_status', ['ok', 'attention', 'not_checked'])
+export const membershipStatusEnum = pgEnum('membership_status', ['active', 'frozen', 'expired', 'cancelled'])
 
 export const organizations = pgTable('organizations', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -134,6 +135,69 @@ export const participantGuardians = pgTable('participant_guardians', {
   isPrimaryContact: boolean('is_primary_contact').notNull().default(false),
   createdAt: createdAt(),
 }, (table) => [primaryKey({ columns: [table.participantId, table.guardianId] }), index('participant_guardians_guardian_idx').on(table.guardianId)])
+
+export const membershipPlans = pgTable('membership_plans', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  durationDays: integer('duration_days').notNull(),
+  priceCents: integer('price_cents').notNull(),
+  visitLimit: integer('visit_limit'),
+  poolAccess: boolean('pool_access').notNull().default(true),
+  gymAccess: boolean('gym_access').notNull().default(true),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (table) => [
+  uniqueIndex('membership_plans_org_name_unique').on(table.organizationId, table.name),
+  check('membership_plans_duration_check', sql`${table.durationDays} > 0`),
+  check('membership_plans_price_check', sql`${table.priceCents} >= 0`),
+  check('membership_plans_visit_limit_check', sql`${table.visitLimit} is null or ${table.visitLimit} > 0`),
+  index('membership_plans_org_idx').on(table.organizationId),
+])
+
+export const gymMemberships = pgTable('gym_memberships', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  participantId: uuid('participant_id').notNull().references(() => participants.id),
+  planId: uuid('plan_id').notNull().references(() => membershipPlans.id),
+  status: membershipStatusEnum('status').notNull().default('active'),
+  startsOn: date('starts_on').notNull(),
+  endsOn: date('ends_on').notNull(),
+  saleAmountCents: integer('sale_amount_cents').notNull(),
+  notes: text('notes'),
+  createdBy: uuid('created_by').notNull().references(() => staffUsers.id),
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (table) => [
+  check('gym_memberships_dates_check', sql`${table.endsOn} >= ${table.startsOn}`),
+  check('gym_memberships_sale_check', sql`${table.saleAmountCents} >= 0`),
+  index('gym_memberships_org_status_idx').on(table.organizationId, table.status),
+  index('gym_memberships_participant_idx').on(table.participantId),
+])
+
+export const membershipPayments = pgTable('membership_payments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  membershipId: uuid('membership_id').notNull().references(() => gymMemberships.id),
+  amountCents: integer('amount_cents').notNull(),
+  method: paymentMethodEnum('method').notNull(),
+  status: paymentStatusEnum('status').notNull().default('recorded'),
+  reference: text('reference'),
+  note: text('note'),
+  paidAt: timestamp('paid_at', { withTimezone: true }).notNull(),
+  recordedBy: uuid('recorded_by').notNull().references(() => staffUsers.id),
+  voidedAt: timestamp('voided_at', { withTimezone: true }),
+  voidedBy: uuid('voided_by').references(() => staffUsers.id),
+  voidReason: text('void_reason'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (table) => [
+  check('membership_payments_amount_check', sql`${table.amountCents} > 0`),
+  index('membership_payments_org_paid_idx').on(table.organizationId, table.paidAt),
+  index('membership_payments_membership_idx').on(table.membershipId),
+])
 
 export const pools = pgTable('pools', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -346,4 +410,3 @@ export const auditEvents = pgTable('audit_events', {
   metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
   createdAt: createdAt(),
 }, (table) => [index('audit_events_org_created_idx').on(table.organizationId, table.createdAt), index('audit_events_entity_idx').on(table.entityType, table.entityId)])
-

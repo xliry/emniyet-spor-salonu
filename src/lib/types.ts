@@ -87,6 +87,38 @@ export interface Participant {
   currentCourseName?: string
 }
 
+export interface Membership {
+  id: string
+  participantId: string
+  participantName: string
+  phone?: string
+  email?: string
+  planName: string
+  durationDays: number
+  poolAccess: boolean
+  gymAccess: boolean
+  status: 'active' | 'frozen' | 'expired' | 'cancelled' | string
+  startsOn: string
+  endsOn: string
+  saleAmountCents: number
+  paidTotalCents: number
+  balanceCents: number
+  lastPaidAt?: string
+  notes?: string
+}
+
+export interface MembershipsResponse {
+  items: Membership[]
+  meta: PageMeta
+  summary: {
+    activeCount: number
+    frozenCount: number
+    expiredCount: number
+    expiringSoonCount: number
+    outstandingBalanceCents: number
+  }
+}
+
 export type AttendanceStatus = 'present' | 'absent' | 'late' | 'excused' | 'makeup_required' | null
 
 export interface AttendanceRosterItem {

@@ -4,6 +4,7 @@ import { courseRoutes } from './courses.js'
 import { dashboardRoutes } from './dashboard.js'
 import { lanePlanRoutes } from './lanePlan.js'
 import { instructorRoutes } from './instructor.js'
+import { membershipRoutes } from './memberships.js'
 import { participantRoutes } from './participants.js'
 import { paymentRoutes } from './payments.js'
 import { poolCheckRoutes } from './poolChecks.js'
@@ -15,6 +16,7 @@ export async function operationRoutes(app: FastifyInstance) {
   await app.register(attendanceRoutes)
   await app.register(lanePlanRoutes)
   await app.register(instructorRoutes)
+  await app.register(membershipRoutes)
   await app.register(paymentRoutes)
   await app.register(poolCheckRoutes)
 }
