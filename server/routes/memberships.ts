@@ -43,7 +43,11 @@ export async function membershipRoutes(app: FastifyInstance) {
       pageSize: z.coerce.number().int().min(1).max(100).default(30),
     }), request.query)
     const search = query.query?.trim()
-    const endingDays = query.ending === '7d' ? 7 : query.ending === '30d' ? 30 : null
+    const endingCondition = query.ending === '7d'
+      ? sql`and m.status='active' and m.ends_on >= current_date and m.ends_on <= current_date + interval '7 days'`
+      : query.ending === '30d'
+        ? sql`and m.status='active' and m.ends_on >= current_date and m.ends_on <= current_date + interval '30 days'`
+        : sql``
     const offset = (query.page - 1) * query.pageSize
     const orderBy = query.sort === 'expires_desc'
       ? sql`case when m.status='active' then 0 when m.status='frozen' then 1 else 2 end,m.ends_on desc`
@@ -67,7 +71,7 @@ export async function membershipRoutes(app: FastifyInstance) {
       ) payments on payments.membership_id=m.id
       where m.organization_id=${user.organizationId}
       ${query.status ? sql`and m.status=${query.status}` : sql``}
-      ${endingDays ? sql`and m.status='active' and m.ends_on >= current_date and m.ends_on <= current_date + ${endingDays}` : sql``}
+      ${endingCondition}
       ${search ? sql`and (concat(p.first_name,' ',p.last_name) ilike ${`%${search}%`} or p.phone ilike ${`%${search}%`} or p.email ilike ${`%${search}%`} or mp.name ilike ${`%${search}%`})` : sql``}
       order by ${orderBy}
       limit ${query.pageSize} offset ${offset}
@@ -77,7 +81,7 @@ export async function membershipRoutes(app: FastifyInstance) {
       from gym_memberships m join participants p on p.id=m.participant_id join membership_plans mp on mp.id=m.plan_id
       where m.organization_id=${user.organizationId}
       ${query.status ? sql`and m.status=${query.status}` : sql``}
-      ${endingDays ? sql`and m.status='active' and m.ends_on >= current_date and m.ends_on <= current_date + ${endingDays}` : sql``}
+      ${endingCondition}
       ${search ? sql`and (concat(p.first_name,' ',p.last_name) ilike ${`%${search}%`} or p.phone ilike ${`%${search}%`} or p.email ilike ${`%${search}%`} or mp.name ilike ${`%${search}%`})` : sql``}
     `)
     const summary = await db.execute(sql`
