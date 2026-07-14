@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: emniyet-spor-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: emniyet_spor
+      POSTGRES_USER: emniyet
+      POSTGRES_PASSWORD: emniyet_local
+    ports:
+      - "127.0.0.1:54329:5432"
+    volumes:
+      - emniyet_spor_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U emniyet -d emniyet_spor"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  emniyet_spor_pgdata:
+    name: emniyet_spor_pgdata

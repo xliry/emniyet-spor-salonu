@@ -1,0 +1,69 @@
+<script setup lang="ts">
+/* eslint vue/singleline-html-element-content-newline: "off", vue/max-attributes-per-line: "off", vue/html-self-closing: "off" */
+import { onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
+import { AlertCircle, CalendarDays, CreditCard, UserPlus, Users, Waves } from 'lucide-vue-next'
+import InitialsAvatar from '@/components/InitialsAvatar.vue'
+import StatePanel from '@/components/StatePanel.vue'
+import StatusBadge from '@/components/StatusBadge.vue'
+import { ApiError, apiFetch, money, shortDate, shortTime } from '@/lib/api'
+import { useAuthStore } from '@/stores/auth'
+
+interface DetailResponse {
+  course: { id:string; name:string; category?:string; termName?:string; status:string; instructorName?:string; scheduleLabel?:string; capacity:number; version:number; feeAmountCents?:number }
+  scheduleRules?: Array<{ id:string; dayLabel?:string; dayOfWeek?:number; startTime:string; endTime:string; laneName?:string }>
+  upcomingSessions?: Array<{ id:string; startsAt:string; endsAt:string; laneName?:string; status?:string }>
+  roster?: Array<{ enrollmentId:string; participantId:string; participantName:string; status:string; agreedFeeAmountCents:number }>
+  waitlist?: Array<{ enrollmentId:string; participantName:string; position:number }>
+  summary?: { activeCount:number; waitlistCount:number; outstandingBalanceCents:number; attendancePercent:number }
+  notesSummary?: string
+}
+
+interface RawDetailResponse {
+  course:{id:string;name:string;status:string;term_name?:string;instructor_name?:string;capacity:number;version:number;fee_amount_cents?:number}
+  scheduleRules:Array<{id:string;day_of_week:number;starts_at_local:string;ends_at_local:string;lane_name?:string}>
+  upcomingSessions:Array<{id:string;starts_at:string;ends_at:string;lane_name?:string;status?:string}>
+  activeRoster:Array<{id:string;participant_id:string;participant_name:string;status:string;agreed_fee_amount_cents?:number}>
+  waitlist:Array<{id:string;participant_name:string;waitlist_position:number}>
+  participantCounts:{active:number;waitlisted:number}
+  paymentSummary:{agreed:number|string;paid:number|string;attendance_count?:number|string}
+  attendanceSummary:{recorded:number}
+  instructorNotesSummary:string|null
+}
+
+const route = useRoute()
+const auth = useAuthStore()
+const data = ref<DetailResponse | null>(null); const loading=ref(true); const error=ref(''); const activeTab=ref('roster')
+const cancelling=ref(false)
+const tabs=[['overview','Genel Bakış'],['roster','Kursiyer Listesi'],['attendance','Yoklama'],['payments','Ödemeler'],['calendar','Ders Takvimi'],['lanes','Kulvar Planı'],['notes','Gelişim Notları']]
+const courseId=String(route.params.courseId)
+
+async function load(){loading.value=true;error.value='';try{const raw=await apiFetch<RawDetailResponse>(`/courses/${courseId}`);const agreed=Number(raw.paymentSummary.agreed||0);const paid=Number(raw.paymentSummary.paid||0);data.value={course:{id:raw.course.id,name:raw.course.name,status:raw.course.status,termName:raw.course.term_name,instructorName:raw.course.instructor_name,capacity:raw.course.capacity,version:raw.course.version,feeAmountCents:raw.course.fee_amount_cents},scheduleRules:raw.scheduleRules.map((rule)=>({id:rule.id,dayOfWeek:rule.day_of_week,startTime:rule.starts_at_local,endTime:rule.ends_at_local,laneName:rule.lane_name})),upcomingSessions:raw.upcomingSessions.map((session)=>({id:session.id,startsAt:session.starts_at,endsAt:session.ends_at,laneName:session.lane_name,status:session.status})),roster:raw.activeRoster.map((person)=>({enrollmentId:person.id,participantId:person.participant_id,participantName:person.participant_name,status:person.status,agreedFeeAmountCents:Number(person.agreed_fee_amount_cents||0)})),waitlist:raw.waitlist.map((person)=>({enrollmentId:person.id,participantName:person.participant_name,position:person.waitlist_position})),summary:{activeCount:raw.participantCounts.active,waitlistCount:raw.participantCounts.waitlisted,outstandingBalanceCents:Math.max(0,agreed-paid),attendancePercent:raw.attendanceSummary.recorded},notesSummary:raw.instructorNotesSummary||undefined}}catch(cause){error.value=cause instanceof Error?cause.message:'Kurs alınamadı.'}finally{loading.value=false}}
+async function cancelCourse(){const reason=globalThis.prompt('Kursu iptal etme nedenini yazın:');if(!reason?.trim())return;cancelling.value=true;try{await apiFetch(`/courses/${courseId}/cancel`,{method:'POST',body:JSON.stringify({reason:reason.trim()})});await load()}catch(cause){error.value=cause instanceof ApiError?cause.message:'Kurs iptal edilemedi.'}finally{cancelling.value=false}}
+onMounted(load)
+</script>
+
+<template>
+  <StatePanel v-if="loading" state="loading" />
+  <StatePanel v-else-if="error&&!data" state="error" :message="error" @retry="load" />
+  <template v-else-if="data">
+    <div class="course-hero"><div><div class="hero-meta"><StatusBadge :tone="data.course.status==='active'?'success':'neutral'" :label="data.course.status==='active'?'Aktif Kurs':data.course.status" /><span>{{ data.course.termName || 'Dönem belirtilmedi' }}</span></div><h1>{{ data.course.name }}</h1><div class="hero-facts"><span><Users :size="17" />{{ data.course.instructorName || 'Eğitmen atanmadı' }}</span><span><CalendarDays :size="17" />{{ data.course.scheduleLabel || 'Program bekliyor' }}</span><span><Waves :size="17" />{{ data.summary?.activeCount || 0 }}/{{ data.course.capacity }} kursiyer</span></div></div><div class="page-actions"><RouterLink v-if="auth.user?.role!=='trainer'" class="button button--secondary" :to="`/courses/${courseId}/enroll`"><UserPlus :size="17" />Kursiyer Ekle</RouterLink><RouterLink v-if="auth.user?.role!=='trainer'" class="button button--secondary" :to="{path:'/payments',query:{query:data.course.name}}"><CreditCard :size="17" />Ödeme Al</RouterLink><RouterLink v-if="data.upcomingSessions?.[0]" class="button button--primary" :to="`/sessions/${data.upcomingSessions[0].id}/attendance`">Yoklama Al</RouterLink></div></div>
+    <div v-if="error" class="notice notice--danger" role="alert"><AlertCircle :size="18" />{{ error }}</div>
+    <nav class="tabs" aria-label="Kurs detay bölümleri"><button v-for="tab in tabs" :key="tab[0]" type="button" :aria-selected="activeTab===tab[0]" @click="activeTab=tab[0]">{{ tab[1] }}</button></nav>
+    <div class="detail-grid">
+      <section class="card detail-main">
+        <template v-if="activeTab==='overview'"><div class="card__header"><h2>Kurs Özeti</h2></div><div class="summary-grid"><div><span>Aktif kursiyer</span><strong>{{ data.summary?.activeCount || 0 }}</strong></div><div><span>Bekleme listesi</span><strong>{{ data.summary?.waitlistCount || 0 }}</strong></div><div><span>Yoklama kaydı</span><strong>{{ data.summary?.attendancePercent || 0 }}</strong></div><div><span>Açık bakiye</span><strong>{{ money(data.summary?.outstandingBalanceCents) }}</strong></div></div></template>
+        <template v-else-if="activeTab==='roster'"><div class="card__header"><h2>Kursiyer Listesi</h2><span class="muted">{{ data.roster?.length || 0 }} kayıt</span></div><div v-if="data.roster?.length" class="table-wrap"><table class="data-table"><thead><tr><th>Kursiyer</th><th>Onaylanan Ücret</th><th>Tahsilat</th><th>Durum</th></tr></thead><tbody><tr v-for="person in data.roster" :key="person.enrollmentId"><td><div class="person-cell"><InitialsAvatar :name="person.participantName" size="sm" /><strong>{{ person.participantName }}</strong></div></td><td>{{ money(person.agreedFeeAmountCents) }}</td><td><RouterLink :to="{path:'/payments',query:{enrollmentId:person.enrollmentId}}">Kaydı aç</RouterLink></td><td><StatusBadge :tone="person.status==='active'?'success':'warning'" :label="person.status==='active'?'Aktif':'Beklemede'" /></td></tr></tbody></table></div><StatePanel v-else state="empty" title="Kursiyer kaydı yok" message="İlk kursiyeri ekleyerek kurs listesini oluşturun." /></template>
+        <template v-else-if="activeTab==='attendance'"><div class="card__header"><h2>Yaklaşan Yoklamalar</h2></div><div v-if="data.upcomingSessions?.length" class="compact-list"><div v-for="session in data.upcomingSessions" :key="session.id"><div><strong>{{ shortDate(session.startsAt) }} · {{ shortTime(session.startsAt) }}</strong><span>{{ session.laneName || 'Kulvar bekliyor' }}</span></div><RouterLink class="button button--secondary" :to="`/sessions/${session.id}/attendance`">Yoklamayı Aç</RouterLink></div></div><StatePanel v-else state="empty" title="Yaklaşan seans yok" /></template>
+        <template v-else-if="activeTab==='payments'"><div class="card__header"><h2>Ödeme Özeti</h2></div><div class="summary-grid"><div><span>Dönem ücreti</span><strong>{{ money(data.course.feeAmountCents) }}</strong></div><div><span>Açık bakiye</span><strong>{{ money(data.summary?.outstandingBalanceCents) }}</strong></div></div><div class="card__body"><RouterLink class="button button--primary" :to="{path:'/payments',query:{query:data.course.name}}">Tahsilat Kayıtlarını Aç</RouterLink></div></template>
+        <template v-else-if="activeTab==='calendar'||activeTab==='lanes'"><div class="card__header"><h2>{{ activeTab==='calendar'?'Ders Takvimi':'Kulvar Planı' }}</h2></div><div v-if="data.scheduleRules?.length" class="compact-list"><div v-for="rule in data.scheduleRules" :key="rule.id"><div><strong>{{ rule.dayLabel || `Haftanın ${rule.dayOfWeek}. günü` }}</strong><span>{{ rule.startTime }}–{{ rule.endTime }}</span></div><span>{{ rule.laneName || 'Kulvar atanmadı' }}</span></div></div><StatePanel v-else state="empty" title="Program bilgisi yok" /><div class="card__body"><RouterLink class="button button--secondary" to="/lane-plan">Genel Kulvar Planını Aç</RouterLink></div></template>
+        <template v-else><div class="card__header"><h2>Gelişim Notu Özeti</h2></div><div v-if="data.notesSummary" class="notes-list"><article><p>{{ data.notesSummary }}</p><small>Kurs kayıt özeti</small></article></div><StatePanel v-else state="empty" title="Gelişim notu yok" message="Bu kurs için kayıtlı not özeti bulunmuyor." /></template>
+      </section>
+      <aside class="stack"><section class="card card--accent"><div class="card__header"><h2>Planlama Detayı</h2></div><div class="card__body stack"><div class="side-fact"><span>Tekrar</span><strong>{{ data.scheduleRules?.length || 0 }} haftalık program</strong></div><div class="side-fact"><span>Kapasite</span><strong>{{ data.course.capacity }} kişi</strong></div><div class="side-fact"><span>Kurs Ücreti</span><strong>{{ money(data.course.feeAmountCents) }}</strong></div></div></section><section class="card"><div class="card__header"><h2>Bekleme Listesi</h2><StatusBadge tone="warning" :label="`${data.waitlist?.length || 0} kişi`" /></div><div v-if="data.waitlist?.length" class="waitlist"><div v-for="person in data.waitlist" :key="person.enrollmentId"><InitialsAvatar :name="person.participantName" size="sm" /><strong>{{ person.participantName }}</strong><span>#{{ person.position }}</span></div></div><StatePanel v-else state="empty" title="Bekleyen yok" /></section><button v-if="auth.isManager" class="button button--danger button--block" :disabled="cancelling||data.course.status==='cancelled'" @click="cancelCourse">{{ cancelling?'İptal ediliyor…':'Kursu İptal Et' }}</button></aside>
+    </div>
+  </template>
+</template>
+
+<style scoped>
+.course-hero{display:flex;justify-content:space-between;gap:20px;padding:20px;margin:-24px -24px 0;background:white;border-bottom:1px solid #d8e2ee}.course-hero h1{margin:10px 0 12px;font-size:28px}.hero-meta,.hero-facts{display:flex;align-items:center;flex-wrap:wrap;gap:13px}.hero-meta>span{color:#5d6875;font-size:13px}.hero-facts{color:#425263;font-size:13px}.hero-facts span{display:flex;align-items:center;gap:6px}.hero-facts svg{color:#258bb5}.tabs{display:flex;overflow:auto;margin:0 -24px 20px;padding:0 24px;background:#fff;border-bottom:1px solid #c1c7d2}.tabs button{min-height:54px;padding:0 17px;white-space:nowrap;border:0;border-bottom:3px solid transparent;background:transparent;color:#5d6875;font-weight:700}.tabs button[aria-selected=true]{border-color:#1769aa;color:#005087}.detail-grid{display:grid;grid-template-columns:minmax(0,3fr) minmax(270px,1fr);gap:20px}.detail-main{min-height:520px}.summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:#d8e2ee}.summary-grid>div{padding:18px;background:#fff}.summary-grid span,.summary-grid strong{display:block}.summary-grid span{color:#49607c;font-size:11px;text-transform:uppercase}.summary-grid strong{margin-top:7px;font-size:21px}.compact-list{display:grid}.compact-list>div{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid #d8e2ee}.compact-list strong,.compact-list span{display:block}.compact-list span{margin-top:3px;color:#5d6875;font-size:12px}.notes-list{display:grid;gap:10px;padding:18px}.notes-list article{padding:13px;background:#edf4ff;border-left:3px solid #258bb5}.notes-list p{margin:0 0 7px;line-height:1.5}.notes-list small{color:#5d6875}.note-form{display:grid;gap:10px;padding:18px;border-top:1px solid #d8e2ee}.note-form .button{justify-self:end}.side-fact span,.side-fact strong{display:block}.side-fact span{font-size:11px;color:#49607c;text-transform:uppercase}.side-fact strong{margin-top:4px}.waitlist{display:grid}.waitlist>div{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;padding:11px 14px;border-bottom:1px solid #d8e2ee}.waitlist span{color:#5d6875;font-size:11px}@media(max-width:900px){.course-hero{flex-direction:column}.detail-grid{grid-template-columns:1fr}.summary-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:720px){.course-hero{margin:-18px -14px 0;padding:18px 14px}.tabs{margin:0 -14px 18px;padding:0 8px}.summary-grid{grid-template-columns:1fr 1fr}}
+</style>

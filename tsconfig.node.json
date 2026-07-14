@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "noEmit": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": ["server/**/*.ts", "scripts/**/*.ts", "shared/**/*.ts", "vite.config.ts", "drizzle.config.ts"]
+}
