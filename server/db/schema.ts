@@ -199,6 +199,21 @@ export const membershipPayments = pgTable('membership_payments', {
   index('membership_payments_membership_idx').on(table.membershipId),
 ])
 
+export const membershipDebts = pgTable('membership_debts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  membershipId: uuid('membership_id').notNull().references(() => gymMemberships.id, { onDelete: 'cascade' }),
+  amountCents: integer('amount_cents').notNull(),
+  reason: text('reason').notNull(),
+  dueOn: date('due_on'),
+  createdBy: uuid('created_by').notNull().references(() => staffUsers.id),
+  createdAt: createdAt(),
+}, (table) => [
+  check('membership_debts_amount_check', sql`${table.amountCents} > 0`),
+  index('membership_debts_org_created_idx').on(table.organizationId, table.createdAt),
+  index('membership_debts_membership_idx').on(table.membershipId),
+])
+
 export const pools = pgTable('pools', {
   id: uuid('id').primaryKey().defaultRandom(),
   organizationId: uuid('organization_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),

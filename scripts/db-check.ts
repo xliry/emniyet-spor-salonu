@@ -4,7 +4,7 @@ import { db, pool } from '../server/db/client.js'
 const expectedTables = [
   'organizations', 'organization_settings', 'branches', 'staff_users', 'auth_sessions', 'instructors', 'participants', 'guardians',
   'participant_guardians', 'pools', 'pool_lanes', 'course_terms', 'courses', 'course_schedule_rules', 'course_sessions', 'enrollments',
-  'attendance_records', 'payment_records', 'pool_check_definitions', 'pool_check_runs', 'pool_check_values', 'audit_events',
+  'attendance_records', 'payment_records', 'membership_debts', 'pool_check_definitions', 'pool_check_runs', 'pool_check_values', 'audit_events',
 ]
 
 try {
@@ -25,4 +25,3 @@ try {
 } finally {
   await pool.end()
 }
-

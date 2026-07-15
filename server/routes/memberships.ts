@@ -5,7 +5,7 @@ import { MEMBERSHIP_STATUSES, PAYMENT_METHODS } from '../../shared/enums.js'
 import { AppError, conflict, notFound } from '../../shared/errors.js'
 import { requireRole } from '../auth/authorize.js'
 import { db } from '../db/client.js'
-import { auditEvents, gymMemberships, membershipPayments, membershipPlans, participants } from '../db/schema.js'
+import { auditEvents, gymMemberships, membershipDebts, membershipPayments, membershipPlans, participants } from '../db/schema.js'
 import { localDateInIstanbul, parseWith, uuidSchema } from '../utils.js'
 
 const createMembershipSchema = z.object({
@@ -38,6 +38,11 @@ const membershipPaymentSchema = z.object({
   note: z.string().max(500).nullable().optional(),
   allowOverpayment: z.boolean().default(false),
 }).strict()
+const membershipDebtSchema = z.object({
+  amountCents: z.number().int().positive(),
+  reason: z.string().trim().min(3).max(500),
+  dueOn: z.string().date().nullable().optional(),
+}).strict()
 
 export async function membershipRoutes(app: FastifyInstance) {
   app.get('/api/memberships', async (request) => {
@@ -60,7 +65,7 @@ export async function membershipRoutes(app: FastifyInstance) {
     const orderBy = query.sort === 'expires_desc'
       ? sql`case when m.status='active' then 0 when m.status='frozen' then 1 else 2 end,m.ends_on desc`
       : query.sort === 'balance_desc'
-        ? sql`coalesce(m.sale_amount_cents-payments.paid_total,m.sale_amount_cents) desc,m.ends_on asc`
+        ? sql`greatest(0,m.sale_amount_cents+coalesce(debts.debt_total,0)-coalesce(payments.paid_total,0)) desc,m.ends_on asc`
         : query.sort === 'newest'
           ? sql`m.created_at desc`
           : sql`case when m.status='active' then 0 when m.status='frozen' then 1 else 2 end,m.ends_on asc`
@@ -68,7 +73,7 @@ export async function membershipRoutes(app: FastifyInstance) {
       select m.id,m.status,m.starts_on,m.ends_on,m.sale_amount_cents,m.notes,
         p.id participant_id,concat(p.first_name,' ',p.last_name) participant_name,p.phone,p.email,
         mp.name plan_name,mp.duration_days,mp.pool_access,mp.gym_access,
-        coalesce(payments.paid_total,0) paid_total,
+        coalesce(payments.paid_total,0) paid_total,coalesce(debts.debt_total,0) debt_total,
         payments.last_paid_at
       from gym_memberships m
       join participants p on p.id=m.participant_id
@@ -77,6 +82,7 @@ export async function membershipRoutes(app: FastifyInstance) {
         select membership_id,sum(amount_cents) paid_total,max(paid_at) last_paid_at
         from membership_payments where status='recorded' group by membership_id
       ) payments on payments.membership_id=m.id
+      left join (select membership_id,sum(amount_cents) debt_total from membership_debts group by membership_id) debts on debts.membership_id=m.id
       where m.organization_id=${user.organizationId}
       ${query.status ? sql`and m.status=${query.status}` : sql``}
       ${endingCondition}
@@ -98,9 +104,10 @@ export async function membershipRoutes(app: FastifyInstance) {
         count(*) filter (where status='frozen') frozen_count,
         count(*) filter (where status='expired') expired_count,
         count(*) filter (where status='active' and ends_on <= current_date + interval '7 days') expiring_soon_count,
-        coalesce(sum(sale_amount_cents-coalesce(paid.paid_total,0)) filter (where status in ('active','frozen')),0) outstanding
+        coalesce(sum(greatest(0,m.sale_amount_cents+coalesce(debts.debt_total,0)-coalesce(paid.paid_total,0))) filter (where m.status in ('active','frozen')),0) outstanding
       from gym_memberships m
       left join (select membership_id,sum(amount_cents) paid_total from membership_payments where status='recorded' group by membership_id) paid on paid.membership_id=m.id
+      left join (select membership_id,sum(amount_cents) debt_total from membership_debts group by membership_id) debts on debts.membership_id=m.id
       where m.organization_id=${user.organizationId}
     `)
     const total = Number((count.rows[0] as any).total)
@@ -120,8 +127,9 @@ export async function membershipRoutes(app: FastifyInstance) {
         startsOn: item.starts_on,
         endsOn: item.ends_on,
         saleAmountCents: Number(item.sale_amount_cents),
+        debtTotalCents: Number(item.debt_total),
         paidTotalCents: Number(item.paid_total),
-        balanceCents: Math.max(0, Number(item.sale_amount_cents) - Number(item.paid_total)),
+        balanceCents: Math.max(0, Number(item.sale_amount_cents) + Number(item.debt_total) - Number(item.paid_total)),
         lastPaidAt: item.last_paid_at,
         notes: item.notes,
       })),
@@ -226,14 +234,39 @@ export async function membershipRoutes(app: FastifyInstance) {
       const membership = locked.rows[0] as any
       if (!membership) throw notFound('Uyelik bulunamadi.')
       if (!['active', 'frozen'].includes(membership.status)) throw conflict('MEMBERSHIP_NOT_PAYABLE', 'Iptal edilmis veya suresi dolmus uyelik icin tahsilat kaydedilemez.')
-      const paidResult = await tx.execute(sql`select coalesce(sum(amount_cents),0) paid from membership_payments where membership_id=${membershipId} and status='recorded'`)
+      const [paidResult, debtResult] = await Promise.all([
+        tx.execute(sql`select coalesce(sum(amount_cents),0) paid from membership_payments where membership_id=${membershipId} and status='recorded'`),
+        tx.execute(sql`select coalesce(sum(amount_cents),0) debt from membership_debts where membership_id=${membershipId}`),
+      ])
       const paid = Number((paidResult.rows[0] as any).paid)
-      const balanceBefore = Math.max(0, Number(membership.sale_amount_cents) - paid)
+      const debt = Number((debtResult.rows[0] as any).debt)
+      const balanceBefore = Math.max(0, Number(membership.sale_amount_cents) + debt - paid)
       if (body.amountCents > balanceBefore && !body.allowOverpayment) throw new AppError(409, 'MEMBERSHIP_OVERPAYMENT', 'Tutar kalan uyelik bakiyesini asiyor. Acik onay gereklidir.')
       if (body.amountCents > balanceBefore && user.role !== 'owner' && user.role !== 'manager') throw new AppError(403, 'OVERPAYMENT_FORBIDDEN', 'Fazla tahsilat yalnizca yonetici onayi ile kaydedilebilir.')
       const [payment] = await tx.insert(membershipPayments).values({ organizationId: user.organizationId, membershipId, amountCents: body.amountCents, method: body.method, paidAt: body.paidAt ? new Date(body.paidAt) : new Date(), reference: body.reference, note: body.note, recordedBy: user.id }).returning()
       await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'membership_payment.record', entityType: 'membership_payment', entityId: payment.id, summary: 'Uyelik tahsilati kaydedildi.', metadata: { membershipId, amountCents: body.amountCents, method: body.method, overpaymentApproved: body.amountCents > balanceBefore } })
-      return { payment, balanceBefore, balanceAfter: Number(membership.sale_amount_cents) - paid - body.amountCents }
+      return { payment, balanceBefore, balanceAfter: Number(membership.sale_amount_cents) + debt - paid - body.amountCents }
+    })
+    return reply.code(201).send(result)
+  })
+
+  app.post('/api/memberships/:membershipId/debts', async (request, reply) => {
+    const user = requireRole(request, ['owner', 'manager', 'front_desk'])
+    const { membershipId } = parseWith(z.object({ membershipId: uuidSchema }), request.params)
+    const body = parseWith(membershipDebtSchema, request.body)
+    const result = await db.transaction(async (tx) => {
+      const locked = await tx.execute(sql`select * from gym_memberships where id=${membershipId} and organization_id=${user.organizationId} for update`)
+      const membership = locked.rows[0] as any
+      if (!membership) throw notFound('Uyelik bulunamadi.')
+      if (!['active', 'frozen'].includes(membership.status)) throw conflict('MEMBERSHIP_NOT_DEBITABLE', 'Iptal edilmis veya suresi dolmus uyelige borc eklenemez.')
+      const [debt] = await tx.insert(membershipDebts).values({ organizationId: user.organizationId, membershipId, amountCents: body.amountCents, reason: body.reason, dueOn: body.dueOn ?? null, createdBy: user.id }).returning()
+      const [paidResult, debtResult] = await Promise.all([
+        tx.execute(sql`select coalesce(sum(amount_cents),0) paid from membership_payments where membership_id=${membershipId} and status='recorded'`),
+        tx.execute(sql`select coalesce(sum(amount_cents),0) debt from membership_debts where membership_id=${membershipId}`),
+      ])
+      const balanceAfter = Math.max(0, Number(membership.sale_amount_cents) + Number((debtResult.rows[0] as any).debt) - Number((paidResult.rows[0] as any).paid))
+      await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'membership_debt.create', entityType: 'membership_debt', entityId: debt.id, summary: 'Uyelik icin ek borc kaydedildi.', metadata: { membershipId, amountCents: body.amountCents, hasDueDate: Boolean(body.dueOn) } })
+      return { debt, balanceAfter }
     })
     return reply.code(201).send(result)
   })

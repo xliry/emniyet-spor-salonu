@@ -64,7 +64,7 @@ export async function participantRoutes(app: FastifyInstance) {
   app.get('/api/participants/:participantId', async (request) => {
     const user = requireRole(request, ['owner', 'manager', 'front_desk'])
     const { participantId } = parseWith(z.object({ participantId: uuidSchema }), request.params)
-    const [personResult, membershipsResult, membershipPaymentsResult, enrollmentsResult, coursePaymentsResult] = await Promise.all([
+    const [personResult, membershipsResult, membershipPaymentsResult, membershipDebtsResult, enrollmentsResult, coursePaymentsResult] = await Promise.all([
       db.execute(sql`
         select p.*,g.full_name guardian_name,g.relationship guardian_relationship,g.phone guardian_phone,g.email guardian_email
         from participants p
@@ -76,10 +76,11 @@ export async function participantRoutes(app: FastifyInstance) {
       db.execute(sql`
         select m.id,m.status,m.starts_on,m.ends_on,m.sale_amount_cents,m.notes,m.cancelled_at,
           mp.id plan_id,mp.name plan_name,mp.duration_days,mp.pool_access,mp.gym_access,
-          coalesce(payments.paid_total,0) paid_total, payments.last_paid_at
+          coalesce(payments.paid_total,0) paid_total,coalesce(debts.debt_total,0) debt_total,payments.last_paid_at
         from gym_memberships m
         join membership_plans mp on mp.id=m.plan_id
         left join (select membership_id,sum(amount_cents) paid_total,max(paid_at) last_paid_at from membership_payments where status='recorded' group by membership_id) payments on payments.membership_id=m.id
+        left join (select membership_id,sum(amount_cents) debt_total from membership_debts group by membership_id) debts on debts.membership_id=m.id
         where m.participant_id=${participantId} and m.organization_id=${user.organizationId}
         order by case when m.status='active' then 0 when m.status='frozen' then 1 else 2 end,m.ends_on desc,m.created_at desc
       `),
@@ -91,6 +92,15 @@ export async function participantRoutes(app: FastifyInstance) {
         join staff_users u on u.id=mpay.recorded_by
         where m.participant_id=${participantId} and mpay.organization_id=${user.organizationId}
         order by mpay.paid_at desc,mpay.created_at desc
+      `),
+      db.execute(sql`
+        select debt.id,debt.membership_id,debt.amount_cents,debt.reason,debt.due_on,debt.created_at,plan.name plan_name,u.full_name recorded_by
+        from membership_debts debt
+        join gym_memberships m on m.id=debt.membership_id
+        join membership_plans plan on plan.id=m.plan_id
+        join staff_users u on u.id=debt.created_by
+        where m.participant_id=${participantId} and debt.organization_id=${user.organizationId}
+        order by debt.created_at desc
       `),
       db.execute(sql`
         select e.id,e.status,e.agreed_fee_amount_cents,e.registered_at,e.cancelled_at,c.id course_id,c.title course_name,
@@ -115,7 +125,7 @@ export async function participantRoutes(app: FastifyInstance) {
     if (!person) throw notFound('Uye bulunamadi.')
     const memberships = membershipsResult.rows.map((item: any) => ({
       id: item.id, planId: item.plan_id, planName: item.plan_name, durationDays: Number(item.duration_days), poolAccess: Boolean(item.pool_access), gymAccess: Boolean(item.gym_access), status: item.status,
-      startsOn: item.starts_on, endsOn: item.ends_on, saleAmountCents: Number(item.sale_amount_cents), paidTotalCents: Number(item.paid_total), balanceCents: Math.max(0, Number(item.sale_amount_cents) - Number(item.paid_total)), lastPaidAt: item.last_paid_at, notes: item.notes, cancelledAt: item.cancelled_at,
+      startsOn: item.starts_on, endsOn: item.ends_on, saleAmountCents: Number(item.sale_amount_cents), debtTotalCents: Number(item.debt_total), paidTotalCents: Number(item.paid_total), balanceCents: Math.max(0, Number(item.sale_amount_cents) + Number(item.debt_total) - Number(item.paid_total)), lastPaidAt: item.last_paid_at, notes: item.notes, cancelledAt: item.cancelled_at,
     }))
     const enrollments = enrollmentsResult.rows.map((item: any) => ({
       id: item.id, courseId: item.course_id, courseName: item.course_name, status: item.status, agreedFeeAmountCents: Number(item.agreed_fee_amount_cents), paidTotalCents: Number(item.paid_total), balanceCents: Math.max(0, Number(item.agreed_fee_amount_cents) - Number(item.paid_total)), registeredAt: item.registered_at, cancelledAt: item.cancelled_at,
@@ -128,6 +138,7 @@ export async function participantRoutes(app: FastifyInstance) {
       },
       memberships,
       membershipPayments: membershipPaymentsResult.rows.map((item: any) => ({ id: item.id, membershipId: item.membership_id, planName: item.plan_name, amountCents: Number(item.amount_cents), method: item.method, status: item.status, paidAt: item.paid_at, reference: item.reference, note: item.note, recordedBy: item.recorded_by })),
+      membershipDebts: membershipDebtsResult.rows.map((item: any) => ({ id: item.id, membershipId: item.membership_id, planName: item.plan_name, amountCents: Number(item.amount_cents), reason: item.reason, dueOn: item.due_on, createdAt: item.created_at, recordedBy: item.recorded_by })),
       enrollments,
       coursePayments: coursePaymentsResult.rows.map((item: any) => ({ id: item.id, enrollmentId: item.enrollment_id, courseName: item.course_name, amountCents: Number(item.amount_cents), method: item.method, status: item.status, paidAt: item.paid_at, reference: item.reference, note: item.note, recordedBy: item.recorded_by })),
       summary: {
