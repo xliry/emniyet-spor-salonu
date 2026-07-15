@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { MEMBERSHIP_STATUSES, PAYMENT_METHODS } from '../../shared/enums.js'
@@ -43,8 +43,81 @@ const membershipDebtSchema = z.object({
   reason: z.string().trim().min(3).max(500),
   dueOn: z.string().date().nullable().optional(),
 }).strict()
+const membershipPlanSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  durationDays: z.number().int().min(1).max(3_650),
+  priceCents: z.number().int().nonnegative().max(100_000_000),
+  visitLimit: z.number().int().min(1).max(10_000).nullable().optional(),
+  poolAccess: z.boolean(),
+  gymAccess: z.boolean(),
+  isActive: z.boolean().optional(),
+}).strict().refine((value) => value.poolAccess || value.gymAccess, { message: 'Pakette en az bir erisim alani secin.' })
 
 export async function membershipRoutes(app: FastifyInstance) {
+  app.get('/api/membership-plans', async (request) => {
+    const user = requireRole(request, ['owner', 'manager'])
+    const rows = await db.select().from(membershipPlans)
+      .where(eq(membershipPlans.organizationId, user.organizationId))
+      .orderBy(desc(membershipPlans.isActive), membershipPlans.name)
+    return { items: rows.map((plan) => ({
+      id: plan.id,
+      name: plan.name,
+      durationDays: plan.durationDays,
+      priceCents: plan.priceCents,
+      visitLimit: plan.visitLimit,
+      poolAccess: plan.poolAccess,
+      gymAccess: plan.gymAccess,
+      isActive: plan.isActive,
+      updatedAt: plan.updatedAt,
+    })) }
+  })
+
+  app.post('/api/membership-plans', async (request, reply) => {
+    const user = requireRole(request, ['owner', 'manager'])
+    const body = parseWith(membershipPlanSchema, request.body)
+    const [existing] = await db.select({ id: membershipPlans.id }).from(membershipPlans)
+      .where(and(eq(membershipPlans.organizationId, user.organizationId), eq(membershipPlans.name, body.name))).limit(1)
+    if (existing) throw conflict('MEMBERSHIP_PLAN_NAME_EXISTS', 'Bu isimle bir paket zaten var.')
+    const [plan] = await db.insert(membershipPlans).values({
+      organizationId: user.organizationId,
+      name: body.name,
+      durationDays: body.durationDays,
+      priceCents: body.priceCents,
+      visitLimit: body.visitLimit ?? null,
+      poolAccess: body.poolAccess,
+      gymAccess: body.gymAccess,
+      isActive: body.isActive ?? true,
+    }).returning()
+    await db.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'membership_plan.create', entityType: 'membership_plan', entityId: plan.id, summary: 'Yeni uyelik paketi olusturuldu.', metadata: { durationDays: plan.durationDays, priceCents: plan.priceCents, isActive: plan.isActive } })
+    return reply.code(201).send(plan)
+  })
+
+  app.patch('/api/membership-plans/:planId', async (request) => {
+    const user = requireRole(request, ['owner', 'manager'])
+    const { planId } = parseWith(z.object({ planId: uuidSchema }), request.params)
+    const body = parseWith(membershipPlanSchema, request.body)
+    const [current] = await db.select().from(membershipPlans)
+      .where(and(eq(membershipPlans.id, planId), eq(membershipPlans.organizationId, user.organizationId))).limit(1)
+    if (!current) throw notFound('Uyelik paketi bulunamadi.')
+    if (body.name !== current.name) {
+      const [sameName] = await db.select({ id: membershipPlans.id }).from(membershipPlans)
+        .where(and(eq(membershipPlans.organizationId, user.organizationId), eq(membershipPlans.name, body.name))).limit(1)
+      if (sameName) throw conflict('MEMBERSHIP_PLAN_NAME_EXISTS', 'Bu isimle bir paket zaten var.')
+    }
+    const [plan] = await db.update(membershipPlans).set({
+      name: body.name,
+      durationDays: body.durationDays,
+      priceCents: body.priceCents,
+      visitLimit: body.visitLimit ?? null,
+      poolAccess: body.poolAccess,
+      gymAccess: body.gymAccess,
+      isActive: body.isActive ?? current.isActive,
+      updatedAt: new Date(),
+    }).where(eq(membershipPlans.id, current.id)).returning()
+    await db.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'membership_plan.update', entityType: 'membership_plan', entityId: plan.id, summary: 'Uyelik paketi ayarlari guncellendi.', metadata: { durationDays: plan.durationDays, priceCents: plan.priceCents, isActive: plan.isActive } })
+    return plan
+  })
+
   app.get('/api/memberships', async (request) => {
     const user = requireRole(request, ['owner', 'manager', 'front_desk'])
     const query = parseWith(z.object({

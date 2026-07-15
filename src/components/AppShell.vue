@@ -4,7 +4,7 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   CalendarDays, ChevronLeft, ClipboardCheck, CreditCard, Dumbbell, LayoutDashboard,
-  LogOut, Menu, Search, Settings, Waves, X,
+  LogOut, Menu, PackageOpen, Search, Settings, Waves, X,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import InitialsAvatar from './InitialsAvatar.vue'
@@ -19,6 +19,7 @@ const navItems = computed(() => [
   { to: '/dashboard', label: 'Genel Bakış', icon: LayoutDashboard },
   ...(auth.user?.role === 'trainer' ? [] : [
     { to: '/memberships', label: 'Salon Üyelikleri', icon: Dumbbell },
+    ...(auth.isManager ? [{ to: '/membership-plans', label: 'Paket Ayarları', icon: PackageOpen }] : []),
     { to: '/payments', label: 'Tahsilatlar', icon: CreditCard },
   ]),
   { to: '/courses', label: 'Kurslar ve Havuz', icon: Waves },
