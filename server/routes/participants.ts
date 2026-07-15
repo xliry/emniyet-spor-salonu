@@ -81,25 +81,27 @@ export async function participantRoutes(app: FastifyInstance) {
         from gym_memberships m
         join membership_plans mp on mp.id=m.plan_id
         left join (select membership_id,sum(amount_cents) paid_total,max(paid_at) last_paid_at from membership_payments where status='recorded' group by membership_id) payments on payments.membership_id=m.id
-        left join (select membership_id,sum(amount_cents) debt_total from membership_debts group by membership_id) debts on debts.membership_id=m.id
+        left join (select membership_id,sum(amount_cents) debt_total from membership_debts where status='recorded' group by membership_id) debts on debts.membership_id=m.id
         where m.participant_id=${participantId} and m.organization_id=${user.organizationId}
         order by case when m.status='active' then 0 when m.status='frozen' then 1 else 2 end,m.ends_on desc,m.created_at desc
       `),
       db.execute(sql`
-        select mpay.id,mpay.membership_id,mpay.amount_cents,mpay.method,mpay.status,mpay.paid_at,mpay.reference,mpay.note,plan.name plan_name,u.full_name recorded_by
+        select mpay.id,mpay.membership_id,mpay.amount_cents,mpay.method,mpay.status,mpay.paid_at,mpay.reference,mpay.note,mpay.receipt_number,mpay.voided_at,mpay.void_reason,plan.name plan_name,u.full_name recorded_by,vu.full_name voided_by
         from membership_payments mpay
         join gym_memberships m on m.id=mpay.membership_id
         join membership_plans plan on plan.id=m.plan_id
         join staff_users u on u.id=mpay.recorded_by
+        left join staff_users vu on vu.id=mpay.voided_by
         where m.participant_id=${participantId} and mpay.organization_id=${user.organizationId}
         order by mpay.paid_at desc,mpay.created_at desc
       `),
       db.execute(sql`
-        select debt.id,debt.membership_id,debt.amount_cents,debt.reason,debt.due_on,debt.created_at,plan.name plan_name,u.full_name recorded_by
+        select debt.id,debt.membership_id,debt.amount_cents,debt.reason,debt.due_on,debt.status,debt.created_at,debt.voided_at,debt.void_reason,plan.name plan_name,u.full_name recorded_by,vu.full_name voided_by
         from membership_debts debt
         join gym_memberships m on m.id=debt.membership_id
         join membership_plans plan on plan.id=m.plan_id
         join staff_users u on u.id=debt.created_by
+        left join staff_users vu on vu.id=debt.voided_by
         where m.participant_id=${participantId} and debt.organization_id=${user.organizationId}
         order by debt.created_at desc
       `),
@@ -113,11 +115,12 @@ export async function participantRoutes(app: FastifyInstance) {
         order by e.registered_at desc
       `),
       db.execute(sql`
-        select pr.id,pr.enrollment_id,pr.amount_cents,pr.method,pr.status,pr.paid_at,pr.reference,pr.note,c.title course_name,u.full_name recorded_by
+        select pr.id,pr.enrollment_id,pr.amount_cents,pr.method,pr.status,pr.paid_at,pr.reference,pr.note,pr.receipt_number,pr.voided_at,pr.void_reason,c.title course_name,u.full_name recorded_by,vu.full_name voided_by
         from payment_records pr
         join enrollments e on e.id=pr.enrollment_id
         join courses c on c.id=e.course_id
         join staff_users u on u.id=pr.recorded_by
+        left join staff_users vu on vu.id=pr.voided_by
         where e.participant_id=${participantId} and pr.organization_id=${user.organizationId}
         order by pr.paid_at desc,pr.created_at desc
       `),
@@ -131,6 +134,16 @@ export async function participantRoutes(app: FastifyInstance) {
     const enrollments = enrollmentsResult.rows.map((item: any) => ({
       id: item.id, courseId: item.course_id, courseName: item.course_name, status: item.status, agreedFeeAmountCents: Number(item.agreed_fee_amount_cents), paidTotalCents: Number(item.paid_total), balanceCents: Math.max(0, Number(item.agreed_fee_amount_cents) - Number(item.paid_total)), registeredAt: item.registered_at, cancelledAt: item.cancelled_at,
     }))
+    const membershipPayments = membershipPaymentsResult.rows.map((item: any) => ({ id: item.id, membershipId: item.membership_id, planName: item.plan_name, amountCents: Number(item.amount_cents), method: item.method, status: item.status, paidAt: item.paid_at, reference: item.reference, note: item.note, receiptNumber: item.receipt_number, recordedBy: item.recorded_by, voidedAt: item.voided_at, voidedBy: item.voided_by, voidReason: item.void_reason }))
+    const membershipCharges = membershipDebtsResult.rows.map((item: any) => ({ id: item.id, membershipId: item.membership_id, planName: item.plan_name, amountCents: Number(item.amount_cents), reason: item.reason, dueOn: item.due_on, status: item.status, createdAt: item.created_at, recordedBy: item.recorded_by, voidedAt: item.voided_at, voidedBy: item.voided_by, voidReason: item.void_reason }))
+    const coursePayments = coursePaymentsResult.rows.map((item: any) => ({ id: item.id, enrollmentId: item.enrollment_id, courseName: item.course_name, amountCents: Number(item.amount_cents), method: item.method, status: item.status, paidAt: item.paid_at, reference: item.reference, note: item.note, receiptNumber: item.receipt_number, recordedBy: item.recorded_by, voidedAt: item.voided_at, voidedBy: item.voided_by, voidReason: item.void_reason }))
+    const financeStatement = [
+      ...memberships.map((item) => ({ id: item.id, kind: 'membership_charge', source: 'membership', description: `${item.planName} paket bedeli`, amountCents: item.saleAmountCents, direction: 'charge', status: 'recorded', occurredAt: item.startsOn, subjectId: item.id })),
+      ...membershipCharges.map((item) => ({ id: item.id, kind: 'additional_charge', source: 'membership', description: item.reason, amountCents: item.amountCents, direction: 'charge', status: item.status, occurredAt: item.createdAt, subjectId: item.membershipId, dueOn: item.dueOn, recordedBy: item.recordedBy, voidedBy: item.voidedBy, voidReason: item.voidReason })),
+      ...membershipPayments.map((item) => ({ id: item.id, kind: 'membership_payment', source: 'membership', description: `${item.planName} tahsilatı`, amountCents: item.amountCents, direction: 'payment', status: item.status, occurredAt: item.paidAt, subjectId: item.membershipId, method: item.method, receiptNumber: item.receiptNumber, reference: item.reference, recordedBy: item.recordedBy, voidedBy: item.voidedBy, voidReason: item.voidReason })),
+      ...enrollments.map((item) => ({ id: item.id, kind: 'course_charge', source: 'course', description: `${item.courseName} kurs ücreti`, amountCents: item.agreedFeeAmountCents, direction: 'charge', status: 'recorded', occurredAt: item.registeredAt, subjectId: item.id })),
+      ...coursePayments.map((item) => ({ id: item.id, kind: 'course_payment', source: 'course', description: `${item.courseName} tahsilatı`, amountCents: item.amountCents, direction: 'payment', status: item.status, occurredAt: item.paidAt, subjectId: item.enrollmentId, method: item.method, receiptNumber: item.receiptNumber, reference: item.reference, recordedBy: item.recordedBy, voidedBy: item.voidedBy, voidReason: item.voidReason })),
+    ].sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
     return {
       participant: {
         id: person.id, participantType: person.participant_type, firstName: person.first_name, lastName: person.last_name, fullName: `${person.first_name} ${person.last_name}`,
@@ -138,10 +151,11 @@ export async function participantRoutes(app: FastifyInstance) {
         swimmingLevel: person.swimming_level, safetyNotes: person.safety_notes, guardian: person.guardian_name ? { fullName: person.guardian_name, relationship: person.guardian_relationship, phone: person.guardian_phone, email: person.guardian_email } : null,
       },
       memberships,
-      membershipPayments: membershipPaymentsResult.rows.map((item: any) => ({ id: item.id, membershipId: item.membership_id, planName: item.plan_name, amountCents: Number(item.amount_cents), method: item.method, status: item.status, paidAt: item.paid_at, reference: item.reference, note: item.note, recordedBy: item.recorded_by })),
-      membershipDebts: membershipDebtsResult.rows.map((item: any) => ({ id: item.id, membershipId: item.membership_id, planName: item.plan_name, amountCents: Number(item.amount_cents), reason: item.reason, dueOn: item.due_on, createdAt: item.created_at, recordedBy: item.recorded_by })),
+      membershipPayments,
+      membershipDebts: membershipCharges,
       enrollments,
-      coursePayments: coursePaymentsResult.rows.map((item: any) => ({ id: item.id, enrollmentId: item.enrollment_id, courseName: item.course_name, amountCents: Number(item.amount_cents), method: item.method, status: item.status, paidAt: item.paid_at, reference: item.reference, note: item.note, recordedBy: item.recorded_by })),
+      coursePayments,
+      financeStatement,
       summary: {
         membershipPaidTotalCents: memberships.reduce((total, item) => total + item.paidTotalCents, 0), membershipBalanceCents: memberships.reduce((total, item) => total + item.balanceCents, 0),
         courseBalanceCents: enrollments.filter((item) => ['active', 'completed'].includes(item.status)).reduce((total, item) => total + item.balanceCents, 0),

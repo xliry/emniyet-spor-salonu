@@ -27,7 +27,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
         (select count(*) from instructors i where i.organization_id=${user.organizationId} and i.is_active=true) as active_instructors,
         (select count(*) from gym_memberships m where m.organization_id=${user.organizationId} and m.status='active') as active_membership_count,
         (select count(*) from gym_memberships m where m.organization_id=${user.organizationId} and m.status='active' and m.ends_on >= current_date and m.ends_on <= current_date + 7) as expiring_membership_count,
-        (select coalesce(sum(greatest(0,m.sale_amount_cents+coalesce(debt.debt_total,0)-coalesce(paid.paid_total,0))),0) from gym_memberships m left join (select membership_id,sum(amount_cents) paid_total from membership_payments where status='recorded' group by membership_id) paid on paid.membership_id=m.id left join (select membership_id,sum(amount_cents) debt_total from membership_debts group by membership_id) debt on debt.membership_id=m.id where m.organization_id=${user.organizationId}) as membership_outstanding_balance,
+        (select coalesce(sum(greatest(0,m.sale_amount_cents+coalesce(debt.debt_total,0)-coalesce(paid.paid_total,0))),0) from gym_memberships m left join (select membership_id,sum(amount_cents) paid_total from membership_payments where status='recorded' group by membership_id) paid on paid.membership_id=m.id left join (select membership_id,sum(amount_cents) debt_total from membership_debts where status='recorded' group by membership_id) debt on debt.membership_id=m.id where m.organization_id=${user.organizationId}) as membership_outstanding_balance,
         (select count(distinct s.pool_lane_id) from course_sessions s where s.organization_id=${user.organizationId} and s.status <> 'cancelled' and s.starts_at < ${end} and s.ends_at > ${start}) as used_lanes,
         (select count(*) from pool_lanes l where l.organization_id=${user.organizationId} and l.is_active=true) as total_lanes
     `)
@@ -61,7 +61,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
       join participants p on p.id=m.participant_id
       join membership_plans mp on mp.id=m.plan_id
       left join (select membership_id,sum(amount_cents) paid_total from membership_payments where status='recorded' group by membership_id) paid on paid.membership_id=m.id
-      left join (select membership_id,sum(amount_cents) debt_total from membership_debts group by membership_id) debt on debt.membership_id=m.id
+      left join (select membership_id,sum(amount_cents) debt_total from membership_debts where status='recorded' group by membership_id) debt on debt.membership_id=m.id
       where m.organization_id=${user.organizationId} and m.status='active' and m.ends_on >= current_date and m.ends_on <= current_date + 7
       order by m.ends_on asc limit 6
     `)

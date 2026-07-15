@@ -186,6 +186,7 @@ export const membershipPayments = pgTable('membership_payments', {
   status: paymentStatusEnum('status').notNull().default('recorded'),
   reference: text('reference'),
   note: text('note'),
+  receiptNumber: text('receipt_number'),
   paidAt: timestamp('paid_at', { withTimezone: true }).notNull(),
   recordedBy: uuid('recorded_by').notNull().references(() => staffUsers.id),
   voidedAt: timestamp('voided_at', { withTimezone: true }),
@@ -195,6 +196,7 @@ export const membershipPayments = pgTable('membership_payments', {
   updatedAt: updatedAt(),
 }, (table) => [
   check('membership_payments_amount_check', sql`${table.amountCents} > 0`),
+  uniqueIndex('membership_payments_org_receipt_unique').on(table.organizationId, table.receiptNumber).where(sql`${table.receiptNumber} is not null`),
   index('membership_payments_org_paid_idx').on(table.organizationId, table.paidAt),
   index('membership_payments_membership_idx').on(table.membershipId),
 ])
@@ -206,11 +208,17 @@ export const membershipDebts = pgTable('membership_debts', {
   amountCents: integer('amount_cents').notNull(),
   reason: text('reason').notNull(),
   dueOn: date('due_on'),
+  status: paymentStatusEnum('status').notNull().default('recorded'),
   createdBy: uuid('created_by').notNull().references(() => staffUsers.id),
+  voidedAt: timestamp('voided_at', { withTimezone: true }),
+  voidedBy: uuid('voided_by').references(() => staffUsers.id),
+  voidReason: text('void_reason'),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
 }, (table) => [
   check('membership_debts_amount_check', sql`${table.amountCents} > 0`),
   index('membership_debts_org_created_idx').on(table.organizationId, table.createdAt),
+  index('membership_debts_org_status_idx').on(table.organizationId, table.status),
   index('membership_debts_membership_idx').on(table.membershipId),
 ])
 
@@ -363,6 +371,7 @@ export const paymentRecords = pgTable('payment_records', {
   status: paymentStatusEnum('status').notNull().default('recorded'),
   reference: text('reference'),
   note: text('note'),
+  receiptNumber: text('receipt_number'),
   paidAt: timestamp('paid_at', { withTimezone: true }).notNull(),
   recordedBy: uuid('recorded_by').notNull().references(() => staffUsers.id),
   voidedAt: timestamp('voided_at', { withTimezone: true }),
@@ -370,7 +379,18 @@ export const paymentRecords = pgTable('payment_records', {
   voidReason: text('void_reason'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-}, (table) => [check('payment_records_amount_check', sql`${table.amountCents} > 0`), index('payment_records_org_paid_idx').on(table.organizationId, table.paidAt), index('payment_records_enrollment_idx').on(table.enrollmentId)])
+}, (table) => [
+  check('payment_records_amount_check', sql`${table.amountCents} > 0`),
+  uniqueIndex('payment_records_org_receipt_unique').on(table.organizationId, table.receiptNumber).where(sql`${table.receiptNumber} is not null`),
+  index('payment_records_org_paid_idx').on(table.organizationId, table.paidAt),
+  index('payment_records_enrollment_idx').on(table.enrollmentId),
+])
+
+export const financeCounters = pgTable('finance_counters', {
+  organizationId: uuid('organization_id').primaryKey().references(() => organizations.id, { onDelete: 'cascade' }),
+  nextReceiptNumber: integer('next_receipt_number').notNull().default(1),
+  updatedAt: updatedAt(),
+})
 
 export const poolCheckDefinitions = pgTable('pool_check_definitions', {
   id: uuid('id').primaryKey().defaultRandom(),

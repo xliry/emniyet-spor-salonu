@@ -199,14 +199,22 @@ export interface PoolChecksResponse {
   }>
 }
 
-export interface PaymentRecord {
+export interface FinanceLedgerItem {
   id: string
+  kind: 'membership_payment' | 'course_payment' | 'additional_charge' | 'membership_charge' | 'course_charge'
+  direction: 'payment' | 'charge'
+  participantId: string
   participantName: string
-  courseName: string
-  enrollmentId: string
+  contextName: string
+  accountId: string
   amountCents: number
-  method: string
+  method?: string
   status: 'recorded' | 'voided' | string
-  recordedAt: string
+  occurredAt: string
+  receiptNumber?: string
+  reference?: string
+  note?: string
   recordedBy: string
+  voidedBy?: string
+  voidReason?: string
 }
