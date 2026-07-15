@@ -34,7 +34,7 @@ const createSchema = z.object({
 }).superRefine((value, context) => {
   if (!value.title && !value.name) context.addIssue({ code: 'custom', path: ['title'], message: 'Kurs adi zorunludur.' })
   if (value.ageMin != null && value.ageMax != null && value.ageMax < value.ageMin) context.addIssue({ code: 'custom', path: ['ageMax'], message: 'Ust yas alt yastan kucuk olamaz.' })
-  if ((value.minimumParticipants ?? 1) > value.capacity) context.addIssue({ code: 'custom', path: ['minimumParticipants'], message: 'Minimum katilim kapasiteyi asamaz.' })
+  if ((value.minimumParticipants ?? 1) > value.capacity) context.addIssue({ code: 'custom', path: ['minimumParticipants'], message: 'Minimum katılım kapasiteyi aşamaz.' })
 })
 const patchSchema = z.object({
   version: z.number().int().positive(), title: z.string().trim().min(2).max(160).optional(), name: z.string().trim().min(2).max(160).optional(),
@@ -44,7 +44,7 @@ const patchSchema = z.object({
   instructorId: uuidSchema.optional(), status: z.enum(COURSE_STATUSES).optional(),
 }).strict()
 
-const formatSchedule = (rules: any[]) => rules.map((rule) => `${rule.day_of_week}. gun ${String(rule.starts_at_local).slice(0, 5)}-${String(rule.ends_at_local).slice(0, 5)}`).join(', ')
+const formatSchedule = (rules: any[]) => rules.map((rule) => `${rule.day_of_week}. gün ${String(rule.starts_at_local).slice(0, 5)}-${String(rule.ends_at_local).slice(0, 5)}`).join(', ')
 
 export async function courseRoutes(app: FastifyInstance) {
   app.get('/api/courses', async (request) => {
@@ -105,13 +105,13 @@ export async function courseRoutes(app: FastifyInstance) {
     const title = body.title ?? body.name!
     const result = await db.transaction(async (tx) => {
       const [term] = await tx.select().from(courseTerms).where(and(eq(courseTerms.id, body.termId), eq(courseTerms.organizationId, user.organizationId))).limit(1)
-      if (!term) throw notFound('Donem bulunamadi.')
+      if (!term) throw notFound('Dönem bulunamadı.')
       const [branch] = await tx.select({ id: branches.id }).from(branches).where(and(eq(branches.id, body.branchId), eq(branches.organizationId, user.organizationId), eq(branches.isActive, true))).limit(1)
-      if (!branch) throw notFound('Sube bulunamadi.')
+      if (!branch) throw notFound('Şube bulunamadı.')
       const [instructor] = await tx.select().from(instructors).where(and(eq(instructors.id, body.instructorId), eq(instructors.organizationId, user.organizationId), eq(instructors.isActive, true))).limit(1)
-      if (!instructor) throw notFound('Egitmen bulunamadi.')
+      if (!instructor) throw notFound('Eğitmen bulunamadı.')
       const lanes = await tx.select({ id: poolLanes.id }).from(poolLanes).where(and(eq(poolLanes.organizationId, user.organizationId), inArray(poolLanes.id, body.scheduleRules.map((rule) => rule.poolLaneId))))
-      if (lanes.length !== new Set(body.scheduleRules.map((rule) => rule.poolLaneId)).size) throw notFound('Kulvar bulunamadi.')
+      if (lanes.length !== new Set(body.scheduleRules.map((rule) => rule.poolLaneId)).size) throw notFound('Kulvar bulunamadı.')
       const [course] = await tx.insert(courses).values({
         organizationId: user.organizationId, branchId: body.branchId, termId: body.termId, instructorId: body.instructorId,
         title, category: body.category, level: body.level, ageMin: body.ageMin, ageMax: body.ageMax,
@@ -130,7 +130,7 @@ export async function courseRoutes(app: FastifyInstance) {
           sessionCount += generated.length
         }
       }
-      await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'course.create', entityType: 'course', entityId: course.id, summary: `${title} kursu olusturuldu.`, metadata: { sessionCount } })
+      await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'course.create', entityType: 'course', entityId: course.id, summary: `${title} kursu oluşturuldu.`, metadata: { sessionCount } })
       return { course, sessionCount }
     })
     return reply.code(201).send({ course: { ...result.course, name: result.course.title }, sessionCount: result.sessionCount })
@@ -145,7 +145,7 @@ export async function courseRoutes(app: FastifyInstance) {
       where c.id=${courseId} and c.organization_id=${user.organizationId} ${user.role === 'trainer' ? sql`and c.instructor_id=${user.instructorId}` : sql``} limit 1
     `)
     const course = result.rows[0] as any
-    if (!course) throw notFound('Kurs bulunamadi.')
+    if (!course) throw notFound('Kurs bulunamadı.')
     const [rules, sessions, roster, waitlist, summary] = await Promise.all([
       db.execute(sql`select r.*,l.name lane_name,p.name pool_name from course_schedule_rules r join pool_lanes l on l.id=r.pool_lane_id join pools p on p.id=l.pool_id where r.course_id=${courseId} order by r.day_of_week,r.starts_at_local`),
       db.execute(sql`select s.*,l.name lane_name from course_sessions s join pool_lanes l on l.id=s.pool_lane_id where s.course_id=${courseId} and s.organization_id=${user.organizationId} order by s.starts_at`),
@@ -177,7 +177,7 @@ export async function courseRoutes(app: FastifyInstance) {
     const body = parseWith(patchSchema, request.body)
     if (body.instructorId) {
       const [instructor] = await db.select({ id: instructors.id }).from(instructors).where(and(eq(instructors.id, body.instructorId), eq(instructors.organizationId, user.organizationId), eq(instructors.isActive, true))).limit(1)
-      if (!instructor) throw notFound('Egitmen bulunamadi.')
+      if (!instructor) throw notFound('Eğitmen bulunamadı.')
     }
     const { version, name, ...fields } = body
     const values: Record<string, unknown> = { ...fields, updatedAt: new Date(), version: version + 1 }
@@ -185,10 +185,10 @@ export async function courseRoutes(app: FastifyInstance) {
     const [updated] = await db.update(courses).set(values).where(and(eq(courses.id, courseId), eq(courses.organizationId, user.organizationId), eq(courses.version, version))).returning()
     if (!updated) {
       const [exists] = await db.select({ id: courses.id }).from(courses).where(and(eq(courses.id, courseId), eq(courses.organizationId, user.organizationId))).limit(1)
-      if (!exists) throw notFound('Kurs bulunamadi.')
-      throw conflict('COURSE_VERSION_CONFLICT', 'Kurs baska bir kullanici tarafindan guncellendi. Sayfayi yenileyin.')
+      if (!exists) throw notFound('Kurs bulunamadı.')
+      throw conflict('COURSE_VERSION_CONFLICT', 'Kurs başka bir kullanıcı tarafından güncellendi. Sayfayı yenileyin.')
     }
-    await db.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'course.update', entityType: 'course', entityId: courseId, summary: `${updated.title} kursu guncellendi.`, metadata: { version: updated.version } })
+    await db.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'course.update', entityType: 'course', entityId: courseId, summary: `${updated.title} kursu güncellendi.`, metadata: { version: updated.version } })
     return { course: { ...updated, name: updated.title } }
   })
 
@@ -198,7 +198,7 @@ export async function courseRoutes(app: FastifyInstance) {
     const { reason } = parseWith(z.object({ reason: z.string().trim().min(3).max(500) }).strict(), request.body)
     return db.transaction(async (tx) => {
       const [course] = await tx.update(courses).set({ status: 'cancelled', version: sql`${courses.version} + 1`, updatedAt: new Date() }).where(and(eq(courses.id, courseId), eq(courses.organizationId, user.organizationId))).returning()
-      if (!course) throw notFound('Kurs bulunamadi.')
+      if (!course) throw notFound('Kurs bulunamadı.')
       await tx.update(courseSessions).set({ status: 'cancelled', cancellationReason: reason, updatedAt: new Date() }).where(and(eq(courseSessions.courseId, courseId), eq(courseSessions.organizationId, user.organizationId), inArray(courseSessions.status, ['scheduled', 'rescheduled'])))
       await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'course.cancel', entityType: 'course', entityId: courseId, summary: `${course.title} kursu iptal edildi.`, metadata: { reasonCategory: 'staff_provided' } })
       return { course: { ...course, name: course.title } }

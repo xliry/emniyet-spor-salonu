@@ -16,9 +16,8 @@ export function requireUser(request: FastifyRequest): SessionUser {
 
 export function requireRole(request: FastifyRequest, roles: readonly StaffRole[]) {
   const user = requireUser(request)
-  if (!roles.includes(user.role)) throw new AppError(403, 'FORBIDDEN', 'Bu islem icin yetkiniz yok.')
+  if (!roles.includes(user.role)) throw new AppError(403, 'FORBIDDEN', 'Bu işlem için yetkiniz yok.')
   return user
 }
 
 export const isManager = (role: StaffRole) => role === 'owner' || role === 'manager'
-

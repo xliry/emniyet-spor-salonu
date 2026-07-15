@@ -48,7 +48,7 @@ export async function poolCheckRoutes(app: FastifyInstance) {
     const user = requireRole(request, ['owner', 'manager'])
     const body = parseWith(createSchema, request.body)
     const [pool] = await db.select({ id: pools.id }).from(pools).where(and(eq(pools.id, body.poolId), eq(pools.organizationId, user.organizationId), eq(pools.isActive, true))).limit(1)
-    if (!pool) throw notFound('Havuz bulunamadi.')
+    if (!pool) throw notFound('Havuz bulunamadı.')
     const definitions = await db.select().from(poolCheckDefinitions).where(and(eq(poolCheckDefinitions.organizationId, user.organizationId), eq(poolCheckDefinitions.isActive, true)))
     const byId = new Map(definitions.map((definition) => [definition.id, definition]))
     const valuesById = new Map(body.values.map((value) => [value.definitionId, value.value]))
@@ -61,16 +61,16 @@ export async function poolCheckRoutes(app: FastifyInstance) {
       if (!definition) throw new AppError(400, 'POOL_CHECK_DEFINITION_INVALID', 'Kontrol tanimi bu tesise ait degil.')
       if (definition.valueType === 'number') {
         const numeric = Number(item.value)
-        if ((typeof item.value !== 'number' && typeof item.value !== 'string') || !Number.isFinite(numeric)) throw new AppError(400, 'POOL_CHECK_VALUE_TYPE_INVALID', `${definition.label} icin sayisal deger gecersiz.`)
+        if ((typeof item.value !== 'number' && typeof item.value !== 'string') || !Number.isFinite(numeric)) throw new AppError(400, 'POOL_CHECK_VALUE_TYPE_INVALID', `${definition.label} için sayısal değer geçersiz.`)
         if ((definition.warningMin != null && numeric < Number(definition.warningMin)) || (definition.warningMax != null && numeric > Number(definition.warningMax))) hasWarning = true
         return { definitionId: item.definitionId, numericValue: String(numeric), textValue: null, booleanValue: null }
       }
       if (definition.valueType === 'boolean') {
-        if (typeof item.value !== 'boolean') throw new AppError(400, 'POOL_CHECK_VALUE_TYPE_INVALID', `${definition.label} icin secim gecersiz.`)
+        if (typeof item.value !== 'boolean') throw new AppError(400, 'POOL_CHECK_VALUE_TYPE_INVALID', `${definition.label} için seçim geçersiz.`)
         if (item.value === false) hasWarning = true
         return { definitionId: item.definitionId, numericValue: null, textValue: null, booleanValue: Boolean(item.value) }
       }
-      if (typeof item.value !== 'string') throw new AppError(400, 'POOL_CHECK_VALUE_TYPE_INVALID', `${definition.label} icin metin degeri gecersiz.`)
+      if (typeof item.value !== 'string') throw new AppError(400, 'POOL_CHECK_VALUE_TYPE_INVALID', `${definition.label} için metin değeri geçersiz.`)
       return { definitionId: item.definitionId, numericValue: null, textValue: item.value, booleanValue: null }
     })
     const status = hasWarning ? 'attention' as const : 'ok' as const

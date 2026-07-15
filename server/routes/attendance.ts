@@ -30,7 +30,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
     const user = requireUser(request)
     const { sessionId } = parseWith(paramsSchema, request.params)
     const session = await sessionForUser(sessionId, user)
-    if (!session) throw notFound('Ders oturumu bulunamadi.')
+    if (!session) throw notFound('Ders oturumu bulunamadı.')
     const roster = await db.execute(sql`
       select e.id enrollment_id,p.id participant_id,concat(p.first_name,' ',p.last_name) participant_name,g.full_name guardian_name,
         a.status,a.note,
@@ -52,8 +52,8 @@ export async function attendanceRoutes(app: FastifyInstance) {
     const { sessionId } = parseWith(paramsSchema, request.params)
     const body = parseWith(saveSchema, request.body)
     const session = await sessionForUser(sessionId, user)
-    if (!session) throw notFound('Ders oturumu bulunamadi.')
-    if (session.status === 'cancelled') throw new AppError(409, 'SESSION_CANCELLED', 'Iptal edilen oturum icin yoklama kaydedilemez.')
+    if (!session) throw notFound('Ders oturumu bulunamadı.')
+    if (session.status === 'cancelled') throw new AppError(409, 'SESSION_CANCELLED', 'İptal edilen oturum için yoklama kaydedilemez.')
     const ids = body.records.map((item) => item.enrollmentId)
     const valid = await db.execute(sql`select id from enrollments where organization_id=${user.organizationId} and course_id=${session.course_id} and status='active' and id in (${sql.join(ids.map((id) => sql`${id}`), sql`,`)})`)
     if (valid.rows.length !== ids.length) throw new AppError(400, 'ATTENDANCE_ENROLLMENT_MISMATCH', 'Bir veya daha fazla kurs kaydi bu derse ait degil.')
@@ -69,7 +69,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
         }).returning()
         rows.push(row)
       }
-      await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'attendance.save', entityType: 'course_session', entityId: sessionId, summary: `${rows.length} kursiyer icin yoklama kaydedildi.`, metadata: { recordCount: rows.length } })
+      await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'attendance.save', entityType: 'course_session', entityId: sessionId, summary: `${rows.length} kursiyer için yoklama kaydedildi.`, metadata: { recordCount: rows.length } })
       return rows
     })
     const summary = Object.fromEntries(ATTENDANCE_STATUSES.map((status) => [status, saved.filter((item) => item.status === status).length]))

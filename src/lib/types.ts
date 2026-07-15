@@ -112,6 +112,7 @@ export interface Membership {
   startsOn: string
   endsOn: string
   saleAmountCents: number
+  debtTotalCents: number
   paidTotalCents: number
   balanceCents: number
   lastPaidAt?: string

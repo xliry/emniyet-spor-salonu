@@ -34,6 +34,8 @@ let debounce: ReturnType<typeof globalThis.setTimeout>
 
 const selectedPlan = computed(() => plans.value.find((plan) => plan.id === form.planId))
 const selectedParticipant = computed(() => participants.value.find((person) => person.id === form.participantId))
+const initialPaymentAmountCents = computed(() => Math.round(Number(form.initialPaymentCents || 0) * 100))
+const remainingAmountCents = computed(() => Math.max(0, (selectedPlan.value?.priceCents ?? 0) - initialPaymentAmountCents.value))
 const statusTone: Record<string, 'success' | 'warning' | 'danger' | 'neutral' | 'info'> = { active: 'success', frozen: 'warning', expired: 'neutral', cancelled: 'danger' }
 const statusLabel: Record<string, string> = { active: 'Aktif', frozen: 'Dondurulmuş', expired: 'Süresi Doldu', cancelled: 'İptal' }
 
@@ -161,7 +163,7 @@ onMounted(load)
       <label v-else class="field field--full"><span>Üye</span><select v-model="form.participantId" required><option value="">Kişi seçin</option><option v-for="person in participants" :key="person.id" :value="person.id">{{ person.fullName }} · {{ person.phone || person.email || 'iletişim yok' }}</option></select></label>
       <label class="field field--third"><span>Paket</span><select v-model="form.planId" required><option v-for="plan in plans" :key="plan.id" :value="plan.id">{{ plan.name }} · {{ plan.durationDays }} gün</option></select></label>
       <label class="field field--third"><span>Başlangıç</span><input v-model="form.startsOn" type="date" required /></label>
-      <label class="field field--third"><span>İlk Tahsilat (TL)</span><input v-model.number="form.initialPaymentCents" type="number" min="0" step="0.01" /></label>
+      <label class="field field--third"><span>İlk Tahsilat (TL)</span><input v-model.number="form.initialPaymentCents" type="number" min="0" :max="(selectedPlan?.priceCents??0)/100" step="0.01" /></label>
       <label class="field field--third"><span>Ödeme Yöntemi</span><select v-model="form.paymentMethod"><option value="cash">Nakit</option><option value="card_terminal">Kart Terminali</option><option value="bank_transfer">Havale/EFT</option><option value="other">Diğer</option></select></label>
       <label class="field field--third"><span>Üye Özeti</span><input :value="selectedParticipant?.participantType === 'member' ? 'Mevcut üye kaydı' : 'Yeni salon üyesi yapılacak'" readonly /></label>
       <label class="field field--full"><span>Not</span><textarea v-model="form.note" placeholder="Sağlık notu, erişim notu veya resepsiyon açıklaması"></textarea></label>
@@ -170,6 +172,7 @@ onMounted(load)
         <span><Dumbbell :size="17" />Salon erişimi: {{ selectedPlan.gymAccess ? 'Açık' : 'Kapalı' }}</span>
         <span v-if="selectedPlan.visitLimit">Ziyaret limiti: {{ selectedPlan.visitLimit }}</span>
       </div>
+      <div v-if="selectedPlan" class="field field--full finance-preview"><div><span>Paket bedeli</span><strong>{{ money(selectedPlan.priceCents) }}</strong></div><div><span>İlk tahsilat</span><strong>{{ money(initialPaymentAmountCents) }}</strong></div><div><span>Kalan bakiye</span><strong>{{ money(remainingAmountCents) }}</strong></div><p>Kalan bakiye otomatik oluşur; ayrıca borç veya ek ücret girmeniz gerekmez.</p></div>
       <p v-if="formError" class="field field--full field-error">{{ formError }}</p>
       <div class="field field--full form-actions"><button class="button button--secondary" type="button" @click="showForm = false">Vazgeç</button><button class="button button--primary" type="submit" :disabled="saving">{{ saving ? 'Kaydediliyor...' : 'Kaydı Tamamla ve Ödeme Al' }}</button></div>
     </form>
@@ -187,7 +190,7 @@ onMounted(load)
   <StatePanel v-else-if="!memberships.length" state="empty" title="Üyelik bulunamadı" message="Yeni üyelik açarak salon erişimini takip etmeye başlayın." />
   <section v-else class="card table-wrap">
     <table class="data-table membership-table">
-      <thead><tr><th>Üye</th><th>Paket</th><th>Erişim</th><th>Durum</th><th>Süre</th><th>Tahsilat</th><th>Son Ödeme</th></tr></thead>
+      <thead><tr><th>Üye</th><th>Paket</th><th>Erişim</th><th>Durum</th><th>Süre</th><th>Hesap Özeti</th><th>Son Ödeme</th></tr></thead>
       <tbody>
         <tr v-for="item in memberships" :key="item.id" class="membership-row" tabindex="0" @click="router.push(`/members/${item.participantId}`)" @keydown.enter="router.push(`/members/${item.participantId}`)">
           <td><div class="person-cell"><InitialsAvatar :name="item.participantName" size="sm" /><div><strong>{{ item.participantName }}</strong><span>{{ item.phone || item.email || 'İletişim yok' }}</span></div></div></td>
@@ -195,7 +198,7 @@ onMounted(load)
           <td><div class="access-chips"><span v-if="item.gymAccess"><Dumbbell :size="14" />Salon</span><span v-if="item.poolAccess"><Waves :size="14" />Havuz</span></div></td>
           <td><StatusBadge :tone="statusTone[item.status] || 'neutral'" :label="statusLabel[item.status] || item.status" /></td>
           <td><strong>{{ shortDate(item.endsOn) }}</strong><span class="muted table-sub">{{ daysLeft(item) >= 0 ? `${daysLeft(item)} gün kaldı` : `${Math.abs(daysLeft(item))} gün geçti` }}</span></td>
-          <td><strong>{{ money(item.paidTotalCents) }} / {{ money(item.saleAmountCents) }}</strong><span class="muted table-sub">{{ item.balanceCents > 0 ? `${money(item.balanceCents)} bakiye` : 'Kapandı' }}</span></td>
+          <td><strong>{{ money(item.saleAmountCents + item.debtTotalCents) }} alacak</strong><span class="muted table-sub">{{ money(item.paidTotalCents) }} tahsil edildi · {{ item.balanceCents > 0 ? `${money(item.balanceCents)} kaldı` : 'kapandı' }}</span></td>
           <td>{{ item.lastPaidAt ? shortDate(item.lastPaidAt) : 'Tahsilat yok' }}</td>
         </tr>
       </tbody>
@@ -204,5 +207,5 @@ onMounted(load)
 </template>
 
 <style scoped>
-.membership-form{margin-bottom:18px}.membership-mode{display:flex;flex-wrap:wrap;gap:8px}.membership-access{display:flex;flex-wrap:wrap;gap:10px;padding:12px;background:#edf4ff;border:1px solid #d8e2ee}.membership-access span{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:800;color:#123a5b}.form-actions{display:flex;justify-content:flex-end;gap:10px}.participant-tools{display:grid;grid-template-columns:minmax(260px,1fr) repeat(3,minmax(150px,220px));align-items:end;gap:12px;margin-bottom:18px;padding:14px;background:#edf4ff;border:1px solid #d8e2ee}.participant-search{min-height:42px;display:flex;align-items:center;gap:8px;padding:0 11px;background:white;border:1px solid #8fa3b7}.participant-search input{width:100%;border:0;outline:0}.type-filter{width:auto;grid-column:auto}.table-sub{display:block;margin-top:3px;font-size:11px}.access-chips{display:flex;flex-wrap:wrap;gap:6px}.access-chips span{display:inline-flex;align-items:center;gap:5px;padding:4px 7px;background:#eaf4ff;border:1px solid #b0c9e8;color:#00497c;font-size:11px;font-weight:800}.membership-table{min-width:980px}@media(max-width:900px){.participant-tools{grid-template-columns:1fr 1fr}.participant-search{grid-column:1/-1}}@media(max-width:600px){.participant-tools{display:flex;align-items:stretch;flex-direction:column}.type-filter{width:100%}.form-actions,.membership-mode{flex-direction:column}.form-actions .button,.membership-mode .button{width:100%}}
+.membership-form{margin-bottom:18px}.membership-mode{display:flex;flex-wrap:wrap;gap:8px}.membership-access{display:flex;flex-wrap:wrap;gap:10px;padding:12px;background:#edf4ff;border:1px solid #d8e2ee}.membership-access span{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:800;color:#123a5b}.finance-preview{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:14px;border:1px solid #b0c9e8;background:#edf4ff}.finance-preview div{display:grid;gap:4px}.finance-preview span{color:#49607c;font-size:10px;font-weight:800;text-transform:uppercase}.finance-preview strong{font-size:18px}.finance-preview p{grid-column:1/-1;margin:0;color:#31506c;font-size:12px}.form-actions{display:flex;justify-content:flex-end;gap:10px}.participant-tools{display:grid;grid-template-columns:minmax(260px,1fr) repeat(3,minmax(150px,220px));align-items:end;gap:12px;margin-bottom:18px;padding:14px;background:#edf4ff;border:1px solid #d8e2ee}.participant-search{min-height:42px;display:flex;align-items:center;gap:8px;padding:0 11px;background:white;border:1px solid #8fa3b7}.participant-search input{width:100%;border:0;outline:0}.type-filter{width:auto;grid-column:auto}.table-sub{display:block;margin-top:3px;font-size:11px}.access-chips{display:flex;flex-wrap:wrap;gap:6px}.access-chips span{display:inline-flex;align-items:center;gap:5px;padding:4px 7px;background:#eaf4ff;border:1px solid #b0c9e8;color:#00497c;font-size:11px;font-weight:800}.membership-table{min-width:980px}@media(max-width:900px){.participant-tools{grid-template-columns:1fr 1fr}.participant-search{grid-column:1/-1}}@media(max-width:600px){.participant-tools{display:flex;align-items:stretch;flex-direction:column}.type-filter{width:100%}.finance-preview{grid-template-columns:1fr}.finance-preview p{grid-column:auto}.form-actions,.membership-mode{flex-direction:column}.form-actions .button,.membership-mode .button{width:100%}}
 </style>

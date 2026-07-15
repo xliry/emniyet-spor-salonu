@@ -6,6 +6,7 @@ import { ENROLLMENT_STATUSES, PARTICIPANT_TYPES } from '../../shared/enums.js'
 import { requireRole } from '../auth/authorize.js'
 import { db } from '../db/client.js'
 import { auditEvents, enrollments, guardians, organizationSettings, participantGuardians, participants } from '../db/schema.js'
+import { membershipBalanceCents } from '../domain/membershipFinance.js'
 import { ageOnDate, parseWith, uuidSchema } from '../utils.js'
 
 const guardianSchema = z.object({ fullName: z.string().trim().min(2).max(160), relationship: z.string().max(80).optional(), phone: z.string().trim().min(7).max(40), email: z.string().email().max(254).optional() }).strict()
@@ -15,18 +16,18 @@ const participantSchema = z.object({
   emergencyContactName: z.string().max(160).nullable().optional(), emergencyContactPhone: z.string().max(40).nullable().optional(),
   swimmingLevel: z.string().max(80).nullable().optional(), safetyNotes: z.string().max(1000).nullable().optional(), guardian: guardianSchema.optional(),
 }).strict()
-const participantUpdateSchema = participantSchema.omit({ participantType: true, guardian: true }).partial().refine((value) => Object.keys(value).length > 0, 'Guncellenecek en az bir alan gonderin.')
+const participantUpdateSchema = participantSchema.omit({ participantType: true, guardian: true }).partial().refine((value) => Object.keys(value).length > 0, 'Güncellenecek en az bir alan gönderin.')
 const enrollSchema = z.object({
   participantId: uuidSchema.optional(), participant: participantSchema.optional(), agreedFeeAmountCents: z.number().int().nonnegative().optional(),
 }).superRefine((value, context) => {
-  if (Boolean(value.participantId) === Boolean(value.participant)) context.addIssue({ code: 'custom', path: ['participantId'], message: 'Mevcut veya yeni kursiyerden yalnizca biri secilmelidir.' })
+  if (Boolean(value.participantId) === Boolean(value.participant)) context.addIssue({ code: 'custom', path: ['participantId'], message: 'Mevcut veya yeni kursiyerden yalnızca biri seçilmelidir.' })
 })
 
 async function createParticipant(executor: any, organizationId: string, actorId: string, input: z.infer<typeof participantSchema>) {
   const [setting] = await executor.select().from(organizationSettings).where(eq(organizationSettings.organizationId, organizationId)).limit(1)
   const threshold = setting?.childAgeThreshold ?? 18
   if (input.birthDate && ageOnDate(input.birthDate) < threshold && !input.guardian) {
-    throw new AppError(400, 'GUARDIAN_REQUIRED', 'Cocuk kursiyer icin veli iletisim bilgisi zorunludur.', { guardian: 'Veli bilgisi ekleyin.' })
+    throw new AppError(400, 'GUARDIAN_REQUIRED', 'Çocuk kursiyer için veli iletişim bilgisi zorunludur.', { guardian: 'Veli bilgisi ekleyin.' })
   }
   const { guardian, ...participantInput } = input
   const [participant] = await executor.insert(participants).values({
@@ -122,10 +123,10 @@ export async function participantRoutes(app: FastifyInstance) {
       `),
     ])
     const person = personResult.rows[0] as any
-    if (!person) throw notFound('Uye bulunamadi.')
+    if (!person) throw notFound('Üye bulunamadı.')
     const memberships = membershipsResult.rows.map((item: any) => ({
       id: item.id, planId: item.plan_id, planName: item.plan_name, durationDays: Number(item.duration_days), poolAccess: Boolean(item.pool_access), gymAccess: Boolean(item.gym_access), status: item.status,
-      startsOn: item.starts_on, endsOn: item.ends_on, saleAmountCents: Number(item.sale_amount_cents), debtTotalCents: Number(item.debt_total), paidTotalCents: Number(item.paid_total), balanceCents: Math.max(0, Number(item.sale_amount_cents) + Number(item.debt_total) - Number(item.paid_total)), lastPaidAt: item.last_paid_at, notes: item.notes, cancelledAt: item.cancelled_at,
+      startsOn: item.starts_on, endsOn: item.ends_on, saleAmountCents: Number(item.sale_amount_cents), debtTotalCents: Number(item.debt_total), paidTotalCents: Number(item.paid_total), balanceCents: membershipBalanceCents(Number(item.sale_amount_cents), Number(item.debt_total), Number(item.paid_total)), lastPaidAt: item.last_paid_at, notes: item.notes, cancelledAt: item.cancelled_at,
     }))
     const enrollments = enrollmentsResult.rows.map((item: any) => ({
       id: item.id, courseId: item.course_id, courseName: item.course_name, status: item.status, agreedFeeAmountCents: Number(item.agreed_fee_amount_cents), paidTotalCents: Number(item.paid_total), balanceCents: Math.max(0, Number(item.agreed_fee_amount_cents) - Number(item.paid_total)), registeredAt: item.registered_at, cancelledAt: item.cancelled_at,
@@ -142,7 +143,7 @@ export async function participantRoutes(app: FastifyInstance) {
       enrollments,
       coursePayments: coursePaymentsResult.rows.map((item: any) => ({ id: item.id, enrollmentId: item.enrollment_id, courseName: item.course_name, amountCents: Number(item.amount_cents), method: item.method, status: item.status, paidAt: item.paid_at, reference: item.reference, note: item.note, recordedBy: item.recorded_by })),
       summary: {
-        membershipPaidTotalCents: memberships.reduce((total, item) => total + item.paidTotalCents, 0), membershipBalanceCents: memberships.filter((item) => ['active', 'frozen'].includes(item.status)).reduce((total, item) => total + item.balanceCents, 0),
+        membershipPaidTotalCents: memberships.reduce((total, item) => total + item.paidTotalCents, 0), membershipBalanceCents: memberships.reduce((total, item) => total + item.balanceCents, 0),
         courseBalanceCents: enrollments.filter((item) => ['active', 'completed'].includes(item.status)).reduce((total, item) => total + item.balanceCents, 0),
       },
     }
@@ -159,8 +160,8 @@ export async function participantRoutes(app: FastifyInstance) {
     }
     const result = await db.transaction(async (tx) => {
       const [updated] = await tx.update(participants).set(values).where(and(eq(participants.id, participantId), eq(participants.organizationId, user.organizationId), eq(participants.isActive, true))).returning()
-      if (!updated) throw notFound('Uye bulunamadi.')
-      await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'participant.update', entityType: 'participant', entityId: updated.id, summary: 'Uye iletisim ve profil bilgileri guncellendi.', metadata: { changedFields: Object.keys(body) } })
+      if (!updated) throw notFound('Üye bulunamadı.')
+      await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'participant.update', entityType: 'participant', entityId: updated.id, summary: 'Üye iletişim ve profil bilgileri güncellendi.', metadata: { changedFields: Object.keys(body) } })
       return updated
     })
     return { participant: { ...result, fullName: `${result.firstName} ${result.lastName}` } }
@@ -171,7 +172,7 @@ export async function participantRoutes(app: FastifyInstance) {
     const input = parseWith(participantSchema, request.body)
     const result = await db.transaction(async (tx) => {
       const created = await createParticipant(tx, user.organizationId, user.id, input)
-      await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'participant.create', entityType: 'participant', entityId: created.participant.id, summary: 'Yeni kursiyer kaydi olusturuldu.', metadata: { participantType: created.participant.participantType, hasGuardian: Boolean(created.guardian) } })
+      await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'participant.create', entityType: 'participant', entityId: created.participant.id, summary: 'Yeni kursiyer kaydı oluşturuldu.', metadata: { participantType: created.participant.participantType, hasGuardian: Boolean(created.guardian) } })
       return created
     })
     return reply.code(201).send({ participant: { ...result.participant, fullName: `${result.participant.firstName} ${result.participant.lastName}` }, guardian: result.guardian })
@@ -184,12 +185,12 @@ export async function participantRoutes(app: FastifyInstance) {
     const result = await db.transaction(async (tx) => {
       const locked = await tx.execute(sql`select id,capacity,fee_amount_cents,status from courses where id=${courseId} and organization_id=${user.organizationId} for update`)
       const course = locked.rows[0] as any
-      if (!course) throw notFound('Kurs bulunamadi.')
-      if (course.status === 'cancelled' || course.status === 'completed') throw conflict('COURSE_NOT_ENROLLABLE', 'Bu kurs yeni kayit kabul etmiyor.')
+      if (!course) throw notFound('Kurs bulunamadı.')
+      if (course.status === 'cancelled' || course.status === 'completed') throw conflict('COURSE_NOT_ENROLLABLE', 'Bu kurs yeni kayıt kabul etmiyor.')
       let participantId = input.participantId
       if (input.participant) participantId = (await createParticipant(tx, user.organizationId, user.id, input.participant)).participant.id
       const [participant] = await tx.select({ id: participants.id }).from(participants).where(and(eq(participants.id, participantId!), eq(participants.organizationId, user.organizationId), eq(participants.isActive, true))).limit(1)
-      if (!participant) throw notFound('Kursiyer bulunamadi.')
+      if (!participant) throw notFound('Kursiyer bulunamadı.')
       const [existing] = await tx.select({ id: enrollments.id }).from(enrollments).where(and(eq(enrollments.courseId, courseId), eq(enrollments.participantId, participant.id))).limit(1)
       if (existing) throw conflict('ENROLLMENT_EXISTS', 'Kursiyer bu kursa daha once kaydedilmis.')
       const activeResult = await tx.execute(sql`select count(*) count from enrollments where course_id=${courseId} and status='active'`)
@@ -204,7 +205,7 @@ export async function participantRoutes(app: FastifyInstance) {
         organizationId: user.organizationId, courseId, participantId: participant.id, status, waitlistPosition,
         agreedFeeAmountCents: input.agreedFeeAmountCents ?? Number(course.fee_amount_cents), registeredBy: user.id,
       }).returning()
-      await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'enrollment.create', entityType: 'enrollment', entityId: enrollment.id, summary: `Kurs kaydi ${status === 'active' ? 'aktif' : 'bekleme listesinde'} olusturuldu.`, metadata: { courseId, status, waitlistPosition } })
+      await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'enrollment.create', entityType: 'enrollment', entityId: enrollment.id, summary: `Kurs kaydı ${status === 'active' ? 'aktif' : 'bekleme listesinde'} oluşturuldu.`, metadata: { courseId, status, waitlistPosition } })
       return enrollment
     })
     return reply.code(201).send({ enrollmentId: result.id, status: result.status, waitlistPosition: result.waitlistPosition, agreedFeeAmountCents: result.agreedFeeAmountCents })
@@ -217,7 +218,7 @@ export async function participantRoutes(app: FastifyInstance) {
     return db.transaction(async (tx) => {
       const locked = await tx.execute(sql`select * from enrollments where id=${enrollmentId} and organization_id=${user.organizationId} for update`)
       const enrollment = locked.rows[0] as any
-      if (!enrollment) throw notFound('Kurs kaydi bulunamadi.')
+      if (!enrollment) throw notFound('Kurs kaydı bulunamadı.')
       const allowed: Record<string, string[]> = { active: ['cancelled', 'completed'], waitlisted: ['active', 'cancelled'], cancelled: [], completed: [] }
       if (!allowed[enrollment.status]?.includes(body.status)) throw conflict('INVALID_ENROLLMENT_TRANSITION', 'Kurs kaydi bu duruma gecirilemez.')
       const [updated] = await tx.update(enrollments).set({ status: body.status, waitlistPosition: body.status === 'waitlisted' ? enrollment.waitlist_position : null, cancelledAt: body.status === 'cancelled' ? new Date() : null, updatedAt: new Date() }).where(eq(enrollments.id, enrollmentId)).returning()

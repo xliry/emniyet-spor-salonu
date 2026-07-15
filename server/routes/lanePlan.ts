@@ -44,11 +44,11 @@ export async function lanePlanRoutes(app: FastifyInstance) {
     const body = parseWith(z.object({ poolLaneId: uuidSchema, version: z.number().int().positive() }).strict(), request.body)
     return db.transaction(async (tx) => {
       const [lane] = await tx.select({ id: poolLanes.id }).from(poolLanes).where(and(eq(poolLanes.id, body.poolLaneId), eq(poolLanes.organizationId, user.organizationId), eq(poolLanes.isActive, true))).limit(1)
-      if (!lane) throw notFound('Kulvar bulunamadi.')
+      if (!lane) throw notFound('Kulvar bulunamadı.')
       const [updated] = await tx.update(courseSessions).set({ poolLaneId: body.poolLaneId, version: body.version + 1, updatedAt: new Date() }).where(and(eq(courseSessions.id, sessionId), eq(courseSessions.organizationId, user.organizationId), eq(courseSessions.version, body.version))).returning()
       if (!updated) {
         const [exists] = await tx.select({ id: courseSessions.id }).from(courseSessions).where(and(eq(courseSessions.id, sessionId), eq(courseSessions.organizationId, user.organizationId))).limit(1)
-        if (!exists) throw notFound('Ders oturumu bulunamadi.')
+        if (!exists) throw notFound('Ders oturumu bulunamadı.')
         throw conflict('SESSION_VERSION_CONFLICT', 'Ders oturumu baska bir kullanici tarafindan degistirildi.')
       }
       await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'lane.assignment_change', entityType: 'course_session', entityId: sessionId, summary: 'Ders oturumunun kulvari degistirildi.', metadata: { poolLaneId: body.poolLaneId, version: updated.version } })
@@ -56,4 +56,3 @@ export async function lanePlanRoutes(app: FastifyInstance) {
     })
   })
 }
-

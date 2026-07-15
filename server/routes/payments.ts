@@ -43,19 +43,19 @@ export async function paymentRoutes(app: FastifyInstance) {
     const result = await db.transaction(async (tx) => {
       const locked = await tx.execute(sql`select e.*,c.title course_name from enrollments e join courses c on c.id=e.course_id where e.id=${enrollmentId} and e.organization_id=${user.organizationId} for update of e`)
       const enrollment = locked.rows[0] as any
-      if (!enrollment) throw notFound('Kurs kaydi bulunamadi.')
+      if (!enrollment) throw notFound('Kurs kaydı bulunamadı.')
       const paidResult = await tx.execute(sql`select coalesce(sum(amount_cents),0) paid from payment_records where enrollment_id=${enrollmentId} and status='recorded'`)
       const paid = Number((paidResult.rows[0] as any).paid)
       const balanceBefore = Math.max(0, Number(enrollment.agreed_fee_amount_cents) - paid)
       if (body.amountCents > balanceBefore) {
         if (!body.allowOverpayment) throw new AppError(409, 'PAYMENT_OVERPAYMENT', 'Tutar kalan bakiyeyi asiyor. Acik onay gereklidir.')
-        if (!isManager(user.role)) throw new AppError(403, 'OVERPAYMENT_FORBIDDEN', 'Fazla tahsilat yalnizca yonetici onayi ile kaydedilebilir.')
+        if (!isManager(user.role)) throw new AppError(403, 'OVERPAYMENT_FORBIDDEN', 'Fazla tahsilat yalnızca yönetici onayı ile kaydedilebilir.')
       }
       const [payment] = await tx.insert(paymentRecords).values({
         organizationId: user.organizationId, enrollmentId, amountCents: body.amountCents, method: body.method,
         paidAt: body.paidAt ? new Date(body.paidAt) : new Date(), reference: body.reference, note: body.note, recordedBy: user.id,
       }).returning()
-      await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'payment.record', entityType: 'payment_record', entityId: payment.id, summary: 'Manuel kurs tahsilati kaydedildi.', metadata: { enrollmentId, amountCents: body.amountCents, method: body.method, overpaymentApproved: body.amountCents > balanceBefore } })
+      await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'payment.record', entityType: 'payment_record', entityId: payment.id, summary: 'Manuel kurs tahsilatı kaydedildi.', metadata: { enrollmentId, amountCents: body.amountCents, method: body.method, overpaymentApproved: body.amountCents > balanceBefore } })
       return { payment, balanceBefore, balanceAfter: Number(enrollment.agreed_fee_amount_cents) - paid - body.amountCents }
     })
     return reply.code(201).send(result)
@@ -69,10 +69,10 @@ export async function paymentRoutes(app: FastifyInstance) {
       const [payment] = await tx.update(paymentRecords).set({ status: 'voided', voidedAt: new Date(), voidedBy: user.id, voidReason: reason, updatedAt: new Date() }).where(and(eq(paymentRecords.id, paymentId), eq(paymentRecords.organizationId, user.organizationId), eq(paymentRecords.status, 'recorded'))).returning()
       if (!payment) {
         const [exists] = await tx.select({ id: paymentRecords.id, status: paymentRecords.status }).from(paymentRecords).where(and(eq(paymentRecords.id, paymentId), eq(paymentRecords.organizationId, user.organizationId))).limit(1)
-        if (!exists) throw notFound('Tahsilat bulunamadi.')
+        if (!exists) throw notFound('Tahsilat bulunamadı.')
         throw conflict('PAYMENT_ALREADY_VOIDED', 'Tahsilat daha once iptal edilmis.')
       }
-      await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'payment.void', entityType: 'payment_record', entityId: payment.id, summary: 'Manuel kurs tahsilati iptal edildi.', metadata: { enrollmentId: payment.enrollmentId, reasonCategory: 'staff_provided' } })
+      await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'payment.void', entityType: 'payment_record', entityId: payment.id, summary: 'Manuel kurs tahsilatı iptal edildi.', metadata: { enrollmentId: payment.enrollmentId, reasonCategory: 'staff_provided' } })
       return { payment }
     })
   })

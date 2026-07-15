@@ -51,7 +51,7 @@ export async function buildApp() {
       return reply.code(409).send({ error: { code: 'LANE_SCHEDULE_CONFLICT', message: 'Secilen kulvar ve saat araliginda baska bir ders var.', fieldErrors: {}, requestId: request.id } })
     }
     if (pgError.code === '23505') {
-      return reply.code(409).send({ error: { code: 'DUPLICATE_RECORD', message: 'Ayni kayit zaten mevcut.', fieldErrors: {}, requestId: request.id } })
+      return reply.code(409).send({ error: { code: 'DUPLICATE_RECORD', message: 'Aynı kayıt zaten mevcut.', fieldErrors: {}, requestId: request.id } })
     }
     const fastifyError = error as FastifyError
     if (fastifyError.statusCode && fastifyError.statusCode >= 400 && fastifyError.statusCode < 500) {
@@ -70,7 +70,7 @@ export async function buildApp() {
     await app.register(fastifyStatic, { root: dist, wildcard: false })
     app.setNotFoundHandler((request, reply) => {
       if (request.url.startsWith('/api/') || request.url.startsWith('/health/')) {
-        return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Uct nokta bulunamadi.', fieldErrors: {}, requestId: request.id } })
+        return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Uç nokta bulunamadı.', fieldErrors: {}, requestId: request.id } })
       }
       return reply.sendFile('index.html')
     })
