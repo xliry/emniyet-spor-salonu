@@ -78,6 +78,7 @@ export interface DashboardResponse {
   }>
   expiringMemberships: Array<{
     id: string
+    participantId: string
     participantName: string
     planName: string
     endsOn: string

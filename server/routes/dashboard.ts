@@ -55,7 +55,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
       group by r.id,p.name order by r.performed_at desc limit 1
     `)
     const expiringMembershipsResult = user.role === 'trainer' ? { rows: [] } : await db.execute(sql`
-      select m.id,concat(p.first_name,' ',p.last_name) participant_name,mp.name plan_name,m.ends_on,
+      select m.id,m.participant_id,concat(p.first_name,' ',p.last_name) participant_name,mp.name plan_name,m.ends_on,
         greatest(0,m.sale_amount_cents-coalesce(paid.paid_total,0)) balance_cents
       from gym_memberships m
       join participants p on p.id=m.participant_id
@@ -89,6 +89,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
       })),
       expiringMemberships: expiringMembershipsResult.rows.map((item: any) => ({
         id: item.id,
+        participantId: item.participant_id,
         participantName: item.participant_name,
         planName: item.plan_name,
         endsOn: item.ends_on,

@@ -17,6 +17,7 @@ const routes = [
       { path: 'pool-checks', name: 'pool-checks', component: () => import('@/pages/PoolChecksPage.vue'), meta: { roles: ['owner', 'manager', 'front_desk'] } },
       { path: 'instructor', name: 'instructor', component: () => import('@/pages/InstructorPage.vue'), meta: { roles: ['owner', 'manager', 'trainer'] } },
       { path: 'memberships', name: 'memberships', component: () => import('@/pages/MembershipsPage.vue'), meta: { roles: ['owner', 'manager', 'front_desk'] } },
+      { path: 'members/:participantId', name: 'member-detail', component: () => import('@/pages/MemberDetailPage.vue'), meta: { roles: ['owner', 'manager', 'front_desk'] } },
       { path: 'participants', name: 'participants', component: () => import('@/pages/ParticipantsPage.vue'), meta: { roles: ['owner', 'manager', 'front_desk'] } },
       { path: 'payments', name: 'payments', component: () => import('@/pages/PaymentsPage.vue'), meta: { roles: ['owner', 'manager', 'front_desk'] } },
       { path: 'settings', name: 'settings', component: () => import('@/pages/SettingsPage.vue') },

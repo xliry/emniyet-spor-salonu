@@ -189,7 +189,7 @@ onMounted(load)
     <table class="data-table membership-table">
       <thead><tr><th>Üye</th><th>Paket</th><th>Erişim</th><th>Durum</th><th>Süre</th><th>Tahsilat</th><th>Son Ödeme</th></tr></thead>
       <tbody>
-        <tr v-for="item in memberships" :key="item.id">
+        <tr v-for="item in memberships" :key="item.id" class="membership-row" tabindex="0" @click="router.push(`/members/${item.participantId}`)" @keydown.enter="router.push(`/members/${item.participantId}`)">
           <td><div class="person-cell"><InitialsAvatar :name="item.participantName" size="sm" /><div><strong>{{ item.participantName }}</strong><span>{{ item.phone || item.email || 'İletişim yok' }}</span></div></div></td>
           <td><strong>{{ item.planName }}</strong><span class="muted table-sub">{{ item.durationDays }} gün</span></td>
           <td><div class="access-chips"><span v-if="item.gymAccess"><Dumbbell :size="14" />Salon</span><span v-if="item.poolAccess"><Waves :size="14" />Havuz</span></div></td>

@@ -30,6 +30,14 @@ const createMembershipSchema = z.object({
 }).strict().superRefine((value, context) => {
   if (Boolean(value.participantId) === Boolean(value.participant)) context.addIssue({ code: 'custom', path: ['participantId'], message: 'Mevcut uye secin veya yeni uye bilgisi girin.' })
 })
+const membershipPaymentSchema = z.object({
+  amountCents: z.number().int().positive(),
+  method: z.enum(PAYMENT_METHODS),
+  paidAt: z.string().datetime({ offset: true }).optional(),
+  reference: z.string().max(120).nullable().optional(),
+  note: z.string().max(500).nullable().optional(),
+  allowOverpayment: z.boolean().default(false),
+}).strict()
 
 export async function membershipRoutes(app: FastifyInstance) {
   app.get('/api/memberships', async (request) => {
@@ -207,5 +215,41 @@ export async function membershipRoutes(app: FastifyInstance) {
       return { membership, payment }
     })
     return reply.code(201).send(result)
+  })
+
+  app.post('/api/memberships/:membershipId/payments', async (request, reply) => {
+    const user = requireRole(request, ['owner', 'manager', 'front_desk'])
+    const { membershipId } = parseWith(z.object({ membershipId: uuidSchema }), request.params)
+    const body = parseWith(membershipPaymentSchema, request.body)
+    const result = await db.transaction(async (tx) => {
+      const locked = await tx.execute(sql`select * from gym_memberships where id=${membershipId} and organization_id=${user.organizationId} for update`)
+      const membership = locked.rows[0] as any
+      if (!membership) throw notFound('Uyelik bulunamadi.')
+      if (!['active', 'frozen'].includes(membership.status)) throw conflict('MEMBERSHIP_NOT_PAYABLE', 'Iptal edilmis veya suresi dolmus uyelik icin tahsilat kaydedilemez.')
+      const paidResult = await tx.execute(sql`select coalesce(sum(amount_cents),0) paid from membership_payments where membership_id=${membershipId} and status='recorded'`)
+      const paid = Number((paidResult.rows[0] as any).paid)
+      const balanceBefore = Math.max(0, Number(membership.sale_amount_cents) - paid)
+      if (body.amountCents > balanceBefore && !body.allowOverpayment) throw new AppError(409, 'MEMBERSHIP_OVERPAYMENT', 'Tutar kalan uyelik bakiyesini asiyor. Acik onay gereklidir.')
+      if (body.amountCents > balanceBefore && user.role !== 'owner' && user.role !== 'manager') throw new AppError(403, 'OVERPAYMENT_FORBIDDEN', 'Fazla tahsilat yalnizca yonetici onayi ile kaydedilebilir.')
+      const [payment] = await tx.insert(membershipPayments).values({ organizationId: user.organizationId, membershipId, amountCents: body.amountCents, method: body.method, paidAt: body.paidAt ? new Date(body.paidAt) : new Date(), reference: body.reference, note: body.note, recordedBy: user.id }).returning()
+      await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'membership_payment.record', entityType: 'membership_payment', entityId: payment.id, summary: 'Uyelik tahsilati kaydedildi.', metadata: { membershipId, amountCents: body.amountCents, method: body.method, overpaymentApproved: body.amountCents > balanceBefore } })
+      return { payment, balanceBefore, balanceAfter: Number(membership.sale_amount_cents) - paid - body.amountCents }
+    })
+    return reply.code(201).send(result)
+  })
+
+  app.post('/api/memberships/:membershipId/cancel', async (request) => {
+    const user = requireRole(request, ['owner', 'manager'])
+    const { membershipId } = parseWith(z.object({ membershipId: uuidSchema }), request.params)
+    const { reason } = parseWith(z.object({ reason: z.string().trim().min(3).max(500) }).strict(), request.body)
+    return db.transaction(async (tx) => {
+      const locked = await tx.execute(sql`select id,status from gym_memberships where id=${membershipId} and organization_id=${user.organizationId} for update`)
+      const membership = locked.rows[0] as any
+      if (!membership) throw notFound('Uyelik bulunamadi.')
+      if (membership.status === 'cancelled') throw conflict('MEMBERSHIP_ALREADY_CANCELLED', 'Uyelik daha once iptal edilmis.')
+      const [updated] = await tx.update(gymMemberships).set({ status: 'cancelled', cancelledAt: new Date(), updatedAt: new Date() }).where(eq(gymMemberships.id, membershipId)).returning()
+      await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'membership.cancel', entityType: 'gym_membership', entityId: membershipId, summary: 'Uyelik iptal edildi; tahsilat gecmisi korundu.', metadata: { from: membership.status, reasonCategory: 'staff_provided', reasonLength: reason.length } })
+      return { membership: updated }
+    })
   })
 }

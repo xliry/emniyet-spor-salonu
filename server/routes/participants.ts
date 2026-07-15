@@ -15,6 +15,7 @@ const participantSchema = z.object({
   emergencyContactName: z.string().max(160).nullable().optional(), emergencyContactPhone: z.string().max(40).nullable().optional(),
   swimmingLevel: z.string().max(80).nullable().optional(), safetyNotes: z.string().max(1000).nullable().optional(), guardian: guardianSchema.optional(),
 }).strict()
+const participantUpdateSchema = participantSchema.omit({ participantType: true, guardian: true }).partial().refine((value) => Object.keys(value).length > 0, 'Guncellenecek en az bir alan gonderin.')
 const enrollSchema = z.object({
   participantId: uuidSchema.optional(), participant: participantSchema.optional(), agreedFeeAmountCents: z.number().int().nonnegative().optional(),
 }).superRefine((value, context) => {
@@ -58,6 +59,100 @@ export async function participantRoutes(app: FastifyInstance) {
       order by p.first_name,p.last_name limit ${query.limit}
     `)
     return { items: result.rows.map((item: any) => ({ id: item.id, fullName: `${item.first_name} ${item.last_name}`, phone: item.phone, email: item.email, participantType: item.participant_type, guardianName: item.guardian_name, activeEnrollmentCount: Number(item.active_enrollment_count), currentCourseName: item.current_course_name })) }
+  })
+
+  app.get('/api/participants/:participantId', async (request) => {
+    const user = requireRole(request, ['owner', 'manager', 'front_desk'])
+    const { participantId } = parseWith(z.object({ participantId: uuidSchema }), request.params)
+    const [personResult, membershipsResult, membershipPaymentsResult, enrollmentsResult, coursePaymentsResult] = await Promise.all([
+      db.execute(sql`
+        select p.*,g.full_name guardian_name,g.relationship guardian_relationship,g.phone guardian_phone,g.email guardian_email
+        from participants p
+        left join participant_guardians pg on pg.participant_id=p.id and pg.is_primary_contact=true
+        left join guardians g on g.id=pg.guardian_id
+        where p.id=${participantId} and p.organization_id=${user.organizationId} and p.is_active=true
+        limit 1
+      `),
+      db.execute(sql`
+        select m.id,m.status,m.starts_on,m.ends_on,m.sale_amount_cents,m.notes,m.cancelled_at,
+          mp.id plan_id,mp.name plan_name,mp.duration_days,mp.pool_access,mp.gym_access,
+          coalesce(payments.paid_total,0) paid_total, payments.last_paid_at
+        from gym_memberships m
+        join membership_plans mp on mp.id=m.plan_id
+        left join (select membership_id,sum(amount_cents) paid_total,max(paid_at) last_paid_at from membership_payments where status='recorded' group by membership_id) payments on payments.membership_id=m.id
+        where m.participant_id=${participantId} and m.organization_id=${user.organizationId}
+        order by case when m.status='active' then 0 when m.status='frozen' then 1 else 2 end,m.ends_on desc,m.created_at desc
+      `),
+      db.execute(sql`
+        select mpay.id,mpay.membership_id,mpay.amount_cents,mpay.method,mpay.status,mpay.paid_at,mpay.reference,mpay.note,plan.name plan_name,u.full_name recorded_by
+        from membership_payments mpay
+        join gym_memberships m on m.id=mpay.membership_id
+        join membership_plans plan on plan.id=m.plan_id
+        join staff_users u on u.id=mpay.recorded_by
+        where m.participant_id=${participantId} and mpay.organization_id=${user.organizationId}
+        order by mpay.paid_at desc,mpay.created_at desc
+      `),
+      db.execute(sql`
+        select e.id,e.status,e.agreed_fee_amount_cents,e.registered_at,e.cancelled_at,c.id course_id,c.title course_name,
+          coalesce(payments.paid_total,0) paid_total
+        from enrollments e
+        join courses c on c.id=e.course_id
+        left join (select enrollment_id,sum(amount_cents) paid_total from payment_records where status='recorded' group by enrollment_id) payments on payments.enrollment_id=e.id
+        where e.participant_id=${participantId} and e.organization_id=${user.organizationId}
+        order by e.registered_at desc
+      `),
+      db.execute(sql`
+        select pr.id,pr.enrollment_id,pr.amount_cents,pr.method,pr.status,pr.paid_at,pr.reference,pr.note,c.title course_name,u.full_name recorded_by
+        from payment_records pr
+        join enrollments e on e.id=pr.enrollment_id
+        join courses c on c.id=e.course_id
+        join staff_users u on u.id=pr.recorded_by
+        where e.participant_id=${participantId} and pr.organization_id=${user.organizationId}
+        order by pr.paid_at desc,pr.created_at desc
+      `),
+    ])
+    const person = personResult.rows[0] as any
+    if (!person) throw notFound('Uye bulunamadi.')
+    const memberships = membershipsResult.rows.map((item: any) => ({
+      id: item.id, planId: item.plan_id, planName: item.plan_name, durationDays: Number(item.duration_days), poolAccess: Boolean(item.pool_access), gymAccess: Boolean(item.gym_access), status: item.status,
+      startsOn: item.starts_on, endsOn: item.ends_on, saleAmountCents: Number(item.sale_amount_cents), paidTotalCents: Number(item.paid_total), balanceCents: Math.max(0, Number(item.sale_amount_cents) - Number(item.paid_total)), lastPaidAt: item.last_paid_at, notes: item.notes, cancelledAt: item.cancelled_at,
+    }))
+    const enrollments = enrollmentsResult.rows.map((item: any) => ({
+      id: item.id, courseId: item.course_id, courseName: item.course_name, status: item.status, agreedFeeAmountCents: Number(item.agreed_fee_amount_cents), paidTotalCents: Number(item.paid_total), balanceCents: Math.max(0, Number(item.agreed_fee_amount_cents) - Number(item.paid_total)), registeredAt: item.registered_at, cancelledAt: item.cancelled_at,
+    }))
+    return {
+      participant: {
+        id: person.id, participantType: person.participant_type, firstName: person.first_name, lastName: person.last_name, fullName: `${person.first_name} ${person.last_name}`,
+        birthDate: person.birth_date, email: person.email, phone: person.phone, emergencyContactName: person.emergency_contact_name, emergencyContactPhone: person.emergency_contact_phone,
+        swimmingLevel: person.swimming_level, safetyNotes: person.safety_notes, guardian: person.guardian_name ? { fullName: person.guardian_name, relationship: person.guardian_relationship, phone: person.guardian_phone, email: person.guardian_email } : null,
+      },
+      memberships,
+      membershipPayments: membershipPaymentsResult.rows.map((item: any) => ({ id: item.id, membershipId: item.membership_id, planName: item.plan_name, amountCents: Number(item.amount_cents), method: item.method, status: item.status, paidAt: item.paid_at, reference: item.reference, note: item.note, recordedBy: item.recorded_by })),
+      enrollments,
+      coursePayments: coursePaymentsResult.rows.map((item: any) => ({ id: item.id, enrollmentId: item.enrollment_id, courseName: item.course_name, amountCents: Number(item.amount_cents), method: item.method, status: item.status, paidAt: item.paid_at, reference: item.reference, note: item.note, recordedBy: item.recorded_by })),
+      summary: {
+        membershipPaidTotalCents: memberships.reduce((total, item) => total + item.paidTotalCents, 0), membershipBalanceCents: memberships.filter((item) => ['active', 'frozen'].includes(item.status)).reduce((total, item) => total + item.balanceCents, 0),
+        courseBalanceCents: enrollments.filter((item) => ['active', 'completed'].includes(item.status)).reduce((total, item) => total + item.balanceCents, 0),
+      },
+    }
+  })
+
+  app.patch('/api/participants/:participantId', async (request) => {
+    const user = requireRole(request, ['owner', 'manager', 'front_desk'])
+    const { participantId } = parseWith(z.object({ participantId: uuidSchema }), request.params)
+    const body = parseWith(participantUpdateSchema, request.body)
+    const values = {
+      ...body,
+      email: body.email === undefined ? undefined : body.email?.toLowerCase() ?? null,
+      updatedAt: new Date(),
+    }
+    const result = await db.transaction(async (tx) => {
+      const [updated] = await tx.update(participants).set(values).where(and(eq(participants.id, participantId), eq(participants.organizationId, user.organizationId), eq(participants.isActive, true))).returning()
+      if (!updated) throw notFound('Uye bulunamadi.')
+      await tx.insert(auditEvents).values({ organizationId: user.organizationId, actorUserId: user.id, action: 'participant.update', entityType: 'participant', entityId: updated.id, summary: 'Uye iletisim ve profil bilgileri guncellendi.', metadata: { changedFields: Object.keys(body) } })
+      return updated
+    })
+    return { participant: { ...result, fullName: `${result.firstName} ${result.lastName}` } }
   })
 
   app.post('/api/participants', async (request, reply) => {
@@ -132,4 +227,3 @@ export async function participantRoutes(app: FastifyInstance) {
     })
   })
 }
-
